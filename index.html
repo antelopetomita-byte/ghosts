@@ -5,68 +5,192 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ghosts</title>
 <style>
-*{
-margin:0;
-padding:0;
-box-sizing:border-box;
-font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-}
-body{
-background:#000;
-color:#fff;
-height:100vh;
-display:flex;
-justify-content:center;
-align-items:center;
-overflow:hidden;
-}
-.container{
-text-align:center;
-}
-.logo{
-font-size:120px;
-margin-bottom:20px;
-animation:float 3s ease-in-out infinite;
-}
-.title{
-font-size:48px;
-letter-spacing:12px;
-font-weight:300;
-}
-.subtitle{
-margin-top:15px;
-color:#888;
-font-size:16px;
-}
-.start{
-margin-top:40px;
-padding:16px 40px;
-background:#fff;
-color:#000;
-border:none;
-border-radius:50px;
-font-size:18px;
-cursor:pointer;
-}
-@keyframes float{
-0%{transform:translateY(0);}
-50%{transform:translateY(-12px);}
-100%{transform:translateY(0);}
-}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{background:#000;color:#fff;min-height:100vh}
+.app{max-width:430px;margin:auto;min-height:100vh;background:radial-gradient(circle at top,#111 0,#000 55%);padding:22px}
+.screen{display:none;min-height:100vh}
+.screen.active{display:block}
+.hero{height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+.ghost{font-size:94px;filter:drop-shadow(0 0 25px rgba(255,255,255,.35));animation:float 3s infinite ease-in-out}
+h1{font-size:52px;letter-spacing:13px;font-weight:300;margin-top:28px}
+.sub{color:#8d8d8d;margin-top:14px}
+button{border:0;border-radius:999px;padding:15px 24px;font-size:16px;background:#fff;color:#000;font-weight:600}
+.start{margin-top:46px;width:210px}
+.top{display:flex;justify-content:space-between;align-items:center;padding:18px 0}
+.logo{font-size:28px;letter-spacing:6px;font-weight:300}
+.card{background:#101010;border:1px solid #222;border-radius:24px;padding:18px;margin:16px 0}
+input,select{width:100%;background:#080808;border:1px solid #333;color:#fff;border-radius:16px;padding:15px;font-size:16px;margin-top:10px}
+.friend{display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid #1d1d1d}
+.avatar{width:48px;height:48px;border-radius:50%;background:#fff;color:#000;display:flex;align-items:center;justify-content:center;font-size:22px}
+.name{font-size:18px}
+.status{color:#777;font-size:13px;margin-top:4px}
+.chat{height:65vh;overflow:auto;padding:10px 0}
+.msg{max-width:78%;padding:13px 15px;border-radius:20px;margin:10px 0;font-size:15px;position:relative}
+.me{background:#fff;color:#000;margin-left:auto;border-bottom-right-radius:5px}
+.you{background:#151515;color:#fff;border-bottom-left-radius:5px}
+.meta{font-size:11px;opacity:.55;margin-top:6px}
+.composer{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);width:min(430px,100%);padding:0 16px;display:flex;gap:8px}
+.composer input{margin:0;flex:1}
+.small{padding:12px 15px}
+.pill{display:inline-block;background:#111;border:1px solid #333;border-radius:999px;padding:8px 12px;margin:6px 4px;color:#aaa;font-size:13px}
+.fade{animation:vanish .8s forwards}
+@keyframes float{50%{transform:translateY(-12px)}}
+@keyframes vanish{to{opacity:0;filter:blur(8px);transform:translateX(40px) scale(.92)}}
 </style>
 </head>
 <body>
-<div class="container">
-<div class="logo">👻</div>
-<div class="title">
-GHOSTS
+
+<div class="app">
+
+<section id="home" class="screen active hero">
+  <div class="ghost">👻</div>
+  <h1>GHOSTS</h1>
+  <div class="sub">Messages fade. Privacy stays.</div>
+  <button class="start" onclick="show('register')">ENTER</button>
+</section>
+
+<section id="register" class="screen">
+  <div class="top"><div class="logo">GHOSTS</div></div>
+  <div class="card">
+    <h2>Create Ghost ID</h2>
+    <p class="sub">電話番号なしで開始</p>
+    <input id="username" placeholder="Username">
+    <button style="width:100%;margin-top:16px" onclick="createUser()">Create</button>
+  </div>
+</section>
+
+<section id="list" class="screen">
+  <div class="top">
+    <div class="logo">GHOSTS</div>
+    <button class="small" onclick="addFriend()">＋</button>
+  </div>
+
+  <div class="card">
+    <div class="sub">Your Ghost ID</div>
+    <div id="myid" style="margin-top:8px;font-size:22px"></div>
+  </div>
+
+  <div id="friends">
+    <div class="friend" onclick="openChat('Yu')">
+      <div class="avatar">Y</div>
+      <div><div class="name">Yu</div><div class="status">online</div></div>
+    </div>
+    <div class="friend" onclick="openChat('Ghost')">
+      <div class="avatar">G</div>
+      <div><div class="name">Ghost</div><div class="status">last seen 1m ago</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="chatScreen" class="screen">
+  <div class="top">
+    <button class="small" onclick="show('list')">←</button>
+    <div id="chatName" class="logo" style="font-size:22px"></div>
+    <button class="small" onclick="clearChat()">消す</button>
+  </div>
+
+  <div class="card">
+    <span class="pill">既読後削除</span>
+    <span class="pill">10秒</span>
+    <span class="pill">30秒</span>
+    <span class="pill">1分</span>
+  </div>
+
+  <div id="chat" class="chat"></div>
+
+  <div class="composer">
+    <input id="text" placeholder="Message">
+    <select id="timer" style="width:92px;margin:0">
+      <option value="never">残す</option>
+      <option value="read">既読</option>
+      <option value="10">10秒</option>
+      <option value="30">30秒</option>
+      <option value="60">1分</option>
+    </select>
+    <button class="small" onclick="send()">送信</button>
+  </div>
+</section>
+
 </div>
-<div class="subtitle">
-Messages fade. Privacy stays.
-</div>
-<button class="start">
-ENTER
-</button>
-</div>
+
+<script>
+let current="Yu";
+let messages=[];
+
+function show(id){
+ document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+ document.getElementById(id).classList.add("active");
+}
+
+function createUser(){
+ const name=document.getElementById("username").value || "ghost";
+ const id="ghost_"+Math.random().toString(36).slice(2,8);
+ localStorage.setItem("ghostName",name);
+ localStorage.setItem("ghostId",id);
+ document.getElementById("myid").textContent=id;
+ show("list");
+}
+
+function openChat(name){
+ current=name;
+ document.getElementById("chatName").textContent=name;
+ show("chatScreen");
+ render();
+}
+
+function send(){
+ const text=document.getElementById("text").value.trim();
+ const timer=document.getElementById("timer").value;
+ if(!text)return;
+ const msg={text,timer,time:new Date().toLocaleTimeString().slice(0,5),from:"me",id:Date.now()};
+ messages.push(msg);
+ document.getElementById("text").value="";
+ render();
+
+ if(timer!=="never" && timer!=="read"){
+   setTimeout(()=>removeMsg(msg.id),Number(timer)*1000);
+ }
+}
+
+function render(){
+ const chat=document.getElementById("chat");
+ chat.innerHTML="";
+ messages.forEach(m=>{
+   const div=document.createElement("div");
+   div.className="msg "+m.from;
+   div.dataset.id=m.id;
+   div.innerHTML=`${m.text}<div class="meta">${m.time} / ${label(m.timer)}</div>`;
+   div.onclick=()=>{ if(m.timer==="read") removeMsg(m.id); };
+   chat.appendChild(div);
+ });
+ chat.scrollTop=chat.scrollHeight;
+}
+
+function label(v){
+ if(v==="never")return"keep";
+ if(v==="read")return"read fade";
+ return v+"s fade";
+}
+
+function removeMsg(id){
+ const el=document.querySelector(`[data-id="${id}"]`);
+ if(el){el.classList.add("fade");setTimeout(()=>{messages=messages.filter(m=>m.id!==id);render()},700)}
+}
+
+function clearChat(){
+ messages=[];
+ render();
+}
+
+function addFriend(){
+ alert("次の版でQR/ID追加を入れる");
+}
+
+window.onload=()=>{
+ const id=localStorage.getItem("ghostId");
+ if(id)document.getElementById("myid").textContent=id;
+};
+</script>
+
 </body>
 </html>
