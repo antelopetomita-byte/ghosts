@@ -344,21 +344,21 @@
       <h1>Add Ghost</h1>
     </div>
     <div class="tabs">
-      <button class="tab on" data-tab="search" type="button">ID検索</button>
+      <button class="tab on" data-tab="link" type="button">招待する</button>
       <button class="tab" data-tab="qr" type="button">QRコード</button>
-      <button class="tab" data-tab="link" type="button">リンク</button>
+      <button class="tab" data-tab="search" type="button">承認</button>
     </div>
 
-    <div class="tabpane on" id="pane-search">
-      <p class="hint" style="margin-bottom:14px">相手のGhost IDを入力して検索します。</p>
+    <div class="tabpane" id="pane-search">
+      <p class="hint" style="margin-bottom:14px">受け取った<b style="color:var(--ghost)">招待リンク</b>を貼り付けて承認すると接続できます。招待された相手としか繋がりません。</p>
       <div class="field">
-        <input class="input" id="searchId" placeholder="ghost_xxxxxx" autocomplete="off" spellcheck="false" />
-        <button class="btn btn-ghost mini" id="searchBtn" type="button" style="width:auto">検索</button>
+        <input class="input" id="searchId" placeholder="招待リンク / inv_…" autocomplete="off" spellcheck="false" />
+        <button class="btn btn-ghost mini" id="searchBtn" type="button" style="width:auto">承認</button>
       </div>
       <div class="result" id="searchResult">
         <div class="av" id="resAv">?</div>
         <div class="meta"><b id="resName">Ghost</b><span id="resId">ghost_…</span></div>
-        <button class="btn btn-primary mini" id="addBtn" type="button" style="width:auto">追加</button>
+        <button class="btn btn-primary mini" id="addBtn" type="button" style="width:auto">接続</button>
       </div>
     </div>
 
@@ -366,16 +366,17 @@
       <div class="qr-wrap">
         <div class="qr-card" id="qrCard"></div>
         <div class="qr-id" id="qrId"><span class="pfx">ghost_</span>——</div>
-        <p class="hint">相手にこのコードを読み取ってもらうと、IDを伝えずに繋がれます。</p>
+        <p class="hint">この招待QRを読み取った相手だけが、あなたと接続できます。</p>
       </div>
     </div>
 
-    <div class="tabpane" id="pane-link">
-      <p class="hint" style="margin-bottom:14px">招待リンクを送るだけ。タップで友達申請が届きます。</p>
+    <div class="tabpane on" id="pane-link">
+      <p class="hint" style="margin-bottom:14px">この<b style="color:var(--ghost)">招待リンク</b>を渡した相手だけが繋がれます。IDを知られても、招待なしでは接続できません。</p>
       <div class="linkbox">
         <input class="input" id="inviteLink" readonly />
         <button class="btn btn-ghost mini" id="copyLink" type="button" style="width:auto">コピー</button>
       </div>
+      <button class="btn btn-ghost" id="regenInvite" type="button" style="margin-top:12px;font-size:13px">招待リンクを作り直す（前のを無効化）</button>
     </div>
   </section>
 
@@ -547,7 +548,6 @@ $('#startBtn').addEventListener('click', async ()=>{
   if(MODE==='cloud'){
     try{
       await setDoc(doc(db,'users',uid),{ghostId:id, createdAt:serverTimestamp()});
-      await setDoc(doc(db,'ghostIndex',id),{uid, createdAt:serverTimestamp()});
       me={uid, id};
     }catch(e){ toast('登録に失敗しました'); return; }
   } else {
@@ -573,7 +573,7 @@ function renderList(){
   if(!state.order.length){
     wrap.innerHTML=`<div class="empty">
       <svg width="46" height="46" viewBox="0 0 32 32"><path fill="#454c57" d="M16 3c-6 0-10 4.6-10 11v13.2c0 1 0 1.8 1.1 1.3 1-.5 1.8-1.6 2.6-1.6.9 0 1.5 1.6 2.7 1.6 1.1 0 1.7-1.6 2.6-1.6.9 0 1.6 1.6 2.7 1.6 1.1 0 1.7-1.6 2.6-1.6.8 0 1.6 1.1 2.6 1.6 1.1.5 1.1-.3 1.1-1.3V14C26 7.6 22 3 16 3z"/></svg>
-      <p>まだ会話はありません。<br>＋ から Ghost ID を追加して始めましょう。</p></div>`;
+      <p>まだ会話はありません。<br>＋ から招待リンクを渡した相手と繋がります。</p></div>`;
     return;
   }
   wrap.innerHTML='';
@@ -613,13 +613,51 @@ function subscribeContacts(){
 }
 
 /* ======================================================================
-   ADD FRIEND
+   ADD FRIEND — invite-only
    ====================================================================== */
+let myInviteUrl='';
+function genToken(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let i=0;i<22;i++) s+=c[Math.floor(Math.random()*c.length)]; return 'inv_'+s; }
+async function ensureInvite(){
+  if(myInviteUrl) return myInviteUrl;
+  if(MODE==='cloud'){
+    try{
+      let token=me.invite;
+      if(!token){
+        const snap=await getDoc(doc(db,'users',uid));
+        token=snap.exists()&&snap.data().inviteToken;
+      }
+      if(!token){
+        token=genToken();
+        await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, active:true, createdAt:serverTimestamp()});
+        await setDoc(doc(db,'users',uid),{inviteToken:token},{merge:true});
+      }
+      me.invite=token;
+      myInviteUrl=SITE+'?invite='+token;
+    }catch(e){ myInviteUrl=SITE+'?add='+me.id; }
+  } else {
+    myInviteUrl=SITE+'?add='+me.id;
+  }
+  return myInviteUrl;
+}
+async function regenInvite(){            // revoke old, issue new
+  if(MODE!=='cloud') return;
+  try{
+    if(me.invite) await setDoc(doc(db,'invites',me.invite),{active:false},{merge:true});
+    const token=genToken();
+    await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, active:true, createdAt:serverTimestamp()});
+    await setDoc(doc(db,'users',uid),{inviteToken:token},{merge:true});
+    me.invite=token; myInviteUrl=SITE+'?invite='+token; qrDrawn=false; $('#qrCard').innerHTML='';
+    $('#inviteLink').value=myInviteUrl; renderQR();
+    toast('招待リンクを更新しました（前のリンクは無効）');
+  }catch(e){ toast('更新に失敗しました'); }
+}
+
 $('#toAdd').addEventListener('click',openAdd);
-function openAdd(){
+async function openAdd(){
   $('#qrId').innerHTML='<span class="pfx">ghost_</span>'+me.id.replace('ghost_','');
-  $('#inviteLink').value=SITE+'?add='+me.id;
-  renderQR(); go('add');
+  go('add');
+  const url=await ensureInvite();
+  $('#inviteLink').value=url; renderQR();
 }
 $$('.tab').forEach(t=>t.addEventListener('click',()=>{
   $$('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on');
@@ -628,49 +666,64 @@ $$('.tab').forEach(t=>t.addEventListener('click',()=>{
 }));
 let qrDrawn=false;
 function renderQR(){
-  if(qrDrawn||typeof QRCode==='undefined') return;
-  try{ new QRCode($('#qrCard'),{text:SITE+'?add='+me.id,width:190,height:190,colorDark:'#07080b',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M}); qrDrawn=true; }catch(e){}
+  if(qrDrawn||typeof QRCode==='undefined'||!myInviteUrl) return;
+  try{ new QRCode($('#qrCard'),{text:myInviteUrl,width:190,height:190,colorDark:'#07080b',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M}); qrDrawn=true; }catch(e){}
 }
-$('#searchBtn').addEventListener('click',doSearch);
-$('#searchId').addEventListener('keydown',e=>{ if(e.key==='Enter') doSearch(); });
-async function doSearch(){
-  let q=$('#searchId').value.trim().toLowerCase();
-  if(!q) return;
-  if(!q.startsWith('ghost_')) q='ghost_'+q.replace(/[^a-z0-9]/g,'');
-  if(q===me.id){ toast('それはあなた自身のIDです'); return; }
-  if(MODE==='cloud'){
-    try{
-      const snap=await getDoc(doc(db,'ghostIndex',q));
-      if(!snap.exists()){ toast('このIDのGhostは見つかりません'); $('#searchResult').classList.remove('show'); return; }
-      const peerUid=snap.data().uid;
-      showResult(q,q,peerUid);
-    }catch(e){ toast('検索に失敗しました'); }
-  } else {
-    showResult(q,q,null); // local: any well-formed id resolves
-  }
+const regenBtn=$('#regenInvite'); if(regenBtn) regenBtn.addEventListener('click',regenInvite);
+
+/* accept an invite (paste link/token) */
+$('#searchBtn').addEventListener('click',acceptFromInput);
+$('#searchId').addEventListener('keydown',e=>{ if(e.key==='Enter') acceptFromInput(); });
+function parseToken(v){
+  v=(v||'').trim();
+  const m=v.match(/[?&]invite=([a-z0-9_]+)/i); if(m) return {invite:m[1]};
+  const a=v.match(/[?&]add=(ghost_[a-z0-9]+)/i); if(a) return {add:a[1]};
+  if(/^inv_[a-z0-9]+$/i.test(v)) return {invite:v};
+  if(/^ghost_[a-z0-9]+$/i.test(v.toLowerCase())) return {add:v.toLowerCase()};
+  return {};
 }
-function showResult(name,id,peerUid){
-  $('#resAv').textContent=initial(name);
-  $('#resName').textContent=name; $('#resId').textContent=id;
+async function acceptFromInput(){
+  const parsed=parseToken($('#searchId').value);
+  if(parsed.invite){ await acceptInvite(parsed.invite); }
+  else if(parsed.add){ await acceptLegacy(parsed.add); }
+  else toast('招待リンクまたはトークンを貼り付けてください');
+}
+async function acceptInvite(token){
+  if(MODE!=='cloud'){ toast('オンライン接続が必要です'); return; }
+  try{
+    const snap=await getDoc(doc(db,'invites',token));
+    if(!snap.exists()||snap.data().active===false){ toast('無効な招待リンクです'); return; }
+    const d=snap.data();
+    if(d.from===uid){ toast('自分の招待リンクです'); return; }
+    showConnect(d.ghostId, d.from);
+  }catch(e){ toast('招待の確認に失敗しました'); }
+}
+async function acceptLegacy(ghostId){     // local demo only
+  showConnect(ghostId, null);
+}
+function showConnect(ghostId,peerUid){
+  $('#resAv').textContent=initial(ghostId);
+  $('#resName').textContent=ghostId; $('#resId').textContent=peerUid?'招待を承認して接続':'demo';
   $('#searchResult').classList.add('show');
-  $('#addBtn').onclick=()=>{ addContact(id,name,peerUid); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
+  $('#addBtn').textContent='接続';
+  $('#addBtn').onclick=()=>{ connectWith(ghostId,peerUid); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
 }
-async function addContact(id,name,peerUid){
+async function connectWith(ghostId,peerUid){
   if(MODE==='cloud' && peerUid){
     try{
-      await setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId:id, addedAt:serverTimestamp()},{merge:true});
+      await setDoc(doc(db,'connections',convId(peerUid)),{members:[uid,peerUid].sort(),createdAt:serverTimestamp()},{merge:true});
+      await setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId, addedAt:serverTimestamp()},{merge:true});
       await setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, addedAt:serverTimestamp()},{merge:true});
-    }catch(e){ toast('追加に失敗しました'); return; }
-    toast(name+' を追加しました');
-    openChat(peerUid);
+    }catch(e){ toast('接続に失敗しました'); return; }
+    toast(ghostId+' と接続しました'); openChat(peerUid);
   } else {
-    if(!state.chats[id]){ state.chats[id]={peer:{id,name,online:Math.random()>0.4},msgs:[]}; state.order.unshift(id); saveLocal(); }
-    toast(name+' を追加しました'); renderList(); openChat(id);
+    if(!state.chats[ghostId]){ state.chats[ghostId]={peer:{id:ghostId,name:ghostId,online:Math.random()>0.4},msgs:[]}; state.order.unshift(ghostId); saveLocal(); }
+    toast(ghostId+' と接続しました'); renderList(); openChat(ghostId);
   }
 }
 $('#copyLink').addEventListener('click',()=>{
   const v=$('#inviteLink').value;
-  (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('リンクをコピーしました'),()=>{ const i=$('#inviteLink'); i.select(); document.execCommand('copy'); toast('リンクをコピーしました'); });
+  (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('招待リンクをコピーしました'),()=>{ const i=$('#inviteLink'); i.select(); document.execCommand('copy'); toast('招待リンクをコピーしました'); });
 });
 
 /* ======================================================================
@@ -929,13 +982,20 @@ function seedDemo(){
 let toastT;
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1900); }
 
-const addParam=new URLSearchParams(location.search).get('add');
+const params=new URLSearchParams(location.search);
+const inviteParam=params.get('invite');
+const addParam=params.get('add');
 const _enter=enterApp;
 enterApp=function(){ _enter();
-  if(addParam && addParam.startsWith('ghost_') && me && addParam!==me.id){
-    setTimeout(()=>{ openAdd(); $$('.tab').forEach(x=>x.classList.remove('on')); $('[data-tab="search"]').classList.add('on');
+  const token = inviteParam || addParam;
+  if(token && me){
+    setTimeout(()=>{
+      openAdd();
+      $$('.tab').forEach(x=>x.classList.remove('on')); $('[data-tab="search"]').classList.add('on');
       $$('.tabpane').forEach(p=>p.classList.remove('on')); $('#pane-search').classList.add('on');
-      $('#searchId').value=addParam; doSearch(); },400);
+      $('#searchId').value = inviteParam ? (location.origin+location.pathname+'?invite='+inviteParam) : addParam;
+      acceptFromInput();
+    },450);
   }
 };
 
