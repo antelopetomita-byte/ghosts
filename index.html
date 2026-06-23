@@ -169,6 +169,13 @@
   .set-row{display:flex;align-items:center;gap:12px;padding:16px 2px;border-bottom:1px solid var(--line)}
   .set-row .k{font:400 11px "Space Mono";color:var(--fade);text-transform:uppercase;letter-spacing:.1em;flex:none;width:88px}
   .set-row .v{flex:1;font:600 15px "Inter";color:var(--ghost);word-break:break-all}
+  .av.grp{background:linear-gradient(150deg,#2fe7a8,#1f9d74)}
+  .av .gcount{position:absolute;right:-3px;bottom:-3px;min-width:16px;height:16px;padding:0 3px;border-radius:9px;background:var(--void-2);border:2px solid var(--void);color:var(--spectral);font:700 9px/12px "Space Mono";text-align:center}
+  .msg .sender{font:600 11px/1 "Inter";color:var(--spectral);margin:0 0 4px 4px}
+  .pick-list{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+  .pick-row{display:flex;align-items:center;gap:12px;padding:11px 4px;cursor:pointer;border-bottom:1px solid var(--line)}
+  .pick-row .pn{flex:1;font:500 15px "Inter";color:var(--ghost)}
+  .pick-row input[type=checkbox]{width:22px;height:22px;accent-color:var(--spectral)}
 
   /* ================= CHAT LIST ================= */
   .list{flex:1;overflow-y:auto;padding:6px 0}
@@ -356,6 +363,9 @@
       <button class="iconbtn" id="toSettings" type="button" aria-label="設定">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
+      <button class="iconbtn" id="toGroup" type="button" aria-label="グループを作成">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/><path d="M19 8v6M22 11h-6"/></svg>
+      </button>
       <button class="iconbtn" id="toAdd" type="button" aria-label="友達を追加">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
@@ -381,6 +391,47 @@
       <div class="set-row"><div class="k">招待</div><div class="v"><a id="setInvite" style="color:var(--spectral);cursor:pointer">招待リンク / QR を開く</a></div></div>
       <p class="sub" style="margin-top:22px">同じIDを別の端末で使うには、起動画面で「ログイン」を選び、このGhost IDとパスワードでサインインしてください。新しいIDは作られません。</p>
       <button class="btn btn-ghost" id="logoutBtn" type="button" style="margin-top:20px;color:var(--danger);border-color:rgba(255,107,107,.3)">ログアウト</button>
+    </div>
+  </section>
+
+  <!-- ============ GROUP NEW ============ -->
+  <section id="groupNew" class="screen">
+    <div class="topbar">
+      <button class="iconbtn" data-back="list" type="button" aria-label="戻る">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h1>New Group</h1>
+    </div>
+    <div class="pad">
+      <label class="flabel">グループ名</label>
+      <input class="input full" id="groupName" placeholder="例: チーム / 友達" maxlength="30" autocomplete="off" />
+      <label class="flabel">メンバーを選択</label>
+      <div id="memberPick" class="pick-list"></div>
+    </div>
+    <div class="pad-foot">
+      <button class="btn btn-primary" id="createGroup" type="button">グループを作成</button>
+    </div>
+  </section>
+
+  <!-- ============ GROUP INFO ============ -->
+  <section id="groupInfo" class="screen">
+    <div class="topbar">
+      <button class="iconbtn" data-back="chat" type="button" aria-label="戻る">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h1>Group</h1>
+    </div>
+    <div class="pad">
+      <h2 class="lead" id="giName" style="margin:0 0 4px">グループ</h2>
+      <p class="sub" id="giCount">0人</p>
+      <label class="flabel">メンバー</label>
+      <div id="memberList"></div>
+      <div id="giAddWrap" style="display:none">
+        <label class="flabel">メンバーを追加</label>
+        <div id="giAdd" class="pick-list"></div>
+        <button class="btn btn-ghost mini" id="giAddBtn" type="button" style="width:auto;margin-top:10px">追加する</button>
+      </div>
+      <button class="btn btn-ghost" id="giLeave" type="button" style="margin-top:26px;color:var(--danger);border-color:rgba(255,107,107,.3)">グループを退出</button>
     </div>
   </section>
 
@@ -436,7 +487,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <div class="av sm" id="peerAv">G<span class="dot"></span></div>
-      <div class="meta"><b id="peerName">Ghost</b><span id="peerStatus">online</span></div>
+      <div class="meta" id="chatHeadMeta"><b id="peerName">Ghost</b><span id="peerStatus">online</span></div>
       <button class="iconbtn" id="clearChat" type="button" aria-label="会話を消去">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
       </button>
@@ -459,7 +510,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, EmailAuthProvider, linkWithCredential, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
 /* ======================================================================
    Ghosts — Phase 2 : Firebase realtime + per-message TTL (server delete)
@@ -665,7 +716,7 @@ async function doLogin(){
 function enterApp(){
   $('#myAv').firstChild.textContent=initial(me.nick||me.id);
   startReaper();
-  if(MODE==='cloud') subscribeContacts(); else renderList();
+  if(MODE==='cloud'){ subscribeContacts(); subscribeGroups(); } else renderList();
 }
 
 /* ======================================================================
@@ -689,14 +740,17 @@ function renderList(){
     else if(last) prev = last.expired?'<div class="prev gone">メッセージは消えました</div>':`<div class="prev">${last.from==='me'?'あなた: ':''}${esc(last.text)}</div>`;
     const t = c.lastTs || (last&&last.t);
     const row=document.createElement('div'); row.className='chat-row';
-    row.innerHTML=`<div class="av sm">${initial(c.peer.name||c.peer.id)}<span class="dot ${c.peer.online?'on':''}"></span></div>
+    const avInner = c.isGroup ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#07080b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>' : initial(c.peer.name||c.peer.id);
+    const sub = c.isGroup ? `<span class="gcount">${(c.members||[]).length}</span>` : `<span class="dot ${c.peer.online?'on':''}"></span>`;
+    row.innerHTML=`<div class="av sm${c.isGroup?' grp':''}">${avInner}${sub}</div>
       <div class="meta"><div class="nm"><b>${esc(c.peer.name||c.peer.id)}</b><time>${t?fmtTime(t):''}</time></div>${prev}</div>`;
     row.addEventListener('click',()=>openChat(cid));
     wrap.appendChild(row);
   });
 }
 
-/* cloud: contacts collection → list */
+/* cloud: contacts collection (1:1) → list */
+let groupsUnsub=null;
 function subscribeContacts(){
   if(contactsUnsub) contactsUnsub();
   try{
@@ -706,13 +760,35 @@ function subscribeContacts(){
         if(ch.type==='removed'){ delete state.chats[cid]; state.order=state.order.filter(x=>x!==cid); return; }
         const existing=state.chats[cid];
         state.chats[cid]={peer:{id:d.ghostId,name:d.nickname||d.ghostId,uid:cid,online:true},
+          conv:[uid,cid].sort().join('__'), isGroup:false,
           msgs:existing?existing.msgs:[], lastText:d.lastText, lastTs:d.lastTs};
         if(!state.order.includes(cid)) state.order.unshift(cid);
       });
-      state.order.sort((a,b)=>(state.chats[b]?.lastTs||0)-(state.chats[a]?.lastTs||0));
-      renderList();
+      sortAndRenderList();
     });
   }catch(e){ renderList(); }
+}
+/* cloud: groups I'm a member of → list */
+function subscribeGroups(){
+  if(groupsUnsub) groupsUnsub();
+  try{
+    groupsUnsub=onSnapshot(query(collection(db,'groups'),where('members','array-contains',uid)),snap=>{
+      snap.docChanges().forEach(ch=>{
+        const gid=ch.doc.id, d=ch.doc.data();
+        if(ch.type==='removed'){ delete state.chats[gid]; state.order=state.order.filter(x=>x!==gid); return; }
+        const existing=state.chats[gid];
+        state.chats[gid]={peer:{id:gid,name:d.name||'グループ',uid:gid,online:false,isGroup:true},
+          conv:gid, isGroup:true, members:d.members||[], owner:d.owner,
+          msgs:existing?existing.msgs:[], lastText:d.lastText, lastTs:d.lastTs};
+        if(!state.order.includes(gid)) state.order.unshift(gid);
+      });
+      sortAndRenderList();
+    });
+  }catch(e){}
+}
+function sortAndRenderList(){
+  state.order.sort((a,b)=>(state.chats[b]?.lastTs||0)-(state.chats[a]?.lastTs||0));
+  renderList();
 }
 
 /* ======================================================================
@@ -787,6 +863,93 @@ if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{
   try{ if(MODE==='cloud'&&auth) await signOut(auth); }catch(e){}
   try{ localStorage.removeItem(LS); }catch(e){}
   location.reload();
+});
+
+/* ======================================================================
+   GROUPS
+   ====================================================================== */
+function dmContacts(){ return state.order.map(id=>state.chats[id]).filter(c=>c&&!c.isGroup&&c.peer&&c.peer.uid); }
+const toGroup=$('#toGroup');
+if(toGroup) toGroup.addEventListener('click',openGroupNew);
+function openGroupNew(){
+  if(MODE!=='cloud'){ toast('オンライン接続が必要です'); return; }
+  $('#groupName').value='';
+  const list=$('#memberPick'); list.innerHTML='';
+  const cs=dmContacts();
+  if(!cs.length){ list.innerHTML='<p class="hint">先に1対1で誰かと接続すると、その人をグループに追加できます。</p>'; }
+  cs.forEach(c=>{
+    const row=document.createElement('label'); row.className='pick-row';
+    row.innerHTML=`<div class="av sm">${initial(c.peer.name||c.peer.id)}</div><span class="pn">${esc(c.peer.name||c.peer.id)}</span><input type="checkbox" value="${c.peer.uid}" data-name="${esc(c.peer.name||c.peer.id)}">`;
+    list.appendChild(row);
+  });
+  go('groupNew');
+}
+const createGroupBtn=$('#createGroup');
+if(createGroupBtn) createGroupBtn.addEventListener('click', async ()=>{
+  const name=$('#groupName').value.trim();
+  const picks=$$('#memberPick input:checked');
+  if(!name){ toast('グループ名を入力してください'); return; }
+  if(!picks.length){ toast('メンバーを1人以上選んでください'); return; }
+  const members=[uid, ...picks.map(p=>p.value)];
+  const gid='grp_'+genToken().replace('inv_','');
+  try{
+    await setDoc(doc(db,'groups',gid),{name, owner:uid, members, createdAt:serverTimestamp(), lastTs:now()});
+  }catch(e){ toast('グループ作成に失敗しました'); return; }
+  state.chats[gid]={peer:{id:gid,name,uid:gid,online:false,isGroup:true}, conv:gid, isGroup:true, members, owner:uid, msgs:[], lastTs:now()};
+  if(!state.order.includes(gid)) state.order.unshift(gid);
+  toast('グループを作成しました');
+  openChat(gid);
+});
+
+/* group info (tap chat header on a group) */
+const chatHeadMeta=$('#chatHeadMeta');
+if(chatHeadMeta) chatHeadMeta.addEventListener('click',()=>{
+  const c=state.chats[openCid]; if(!c||!c.isGroup) return;
+  openGroupInfo(c);
+});
+let infoGid=null;
+function openGroupInfo(c){
+  infoGid=openCid;
+  $('#giName').textContent=c.peer.name;
+  $('#giCount').textContent=`${(c.members||[]).length}人`;
+  const ml=$('#memberList'); ml.innerHTML='';
+  (c.members||[]).forEach(mUid=>{
+    const meTag = mUid===uid ? '（自分）' : (mUid===c.owner?'（作成者）':'');
+    let label = mUid===uid ? (me.nick||me.id) : mUid;
+    // try to resolve name from my dm contacts
+    const dm=state.chats[mUid]; if(dm&&dm.peer) label=dm.peer.name||label;
+    const row=document.createElement('div'); row.className='set-row';
+    row.innerHTML=`<div class="av sm">${initial(label)}</div><div class="v" style="flex:1">${esc(label)} <span style="color:var(--fade);font-size:12px">${meTag}</span></div>`;
+    ml.appendChild(row);
+  });
+  // add-member candidates = my dm contacts not already in group
+  const add=$('#giAdd'); add.innerHTML='';
+  const cand=dmContacts().filter(x=>!(c.members||[]).includes(x.peer.uid));
+  if(cand.length){
+    cand.forEach(x=>{
+      const row=document.createElement('label'); row.className='pick-row';
+      row.innerHTML=`<div class="av sm">${initial(x.peer.name||x.peer.id)}</div><span class="pn">${esc(x.peer.name||x.peer.id)}</span><input type="checkbox" value="${x.peer.uid}">`;
+      add.appendChild(row);
+    });
+    $('#giAddWrap').style.display='block';
+  } else { $('#giAddWrap').style.display='none'; }
+  go('groupInfo');
+}
+const giAddBtn=$('#giAddBtn');
+if(giAddBtn) giAddBtn.addEventListener('click', async ()=>{
+  const picks=$$('#giAdd input:checked'); if(!picks.length){ toast('追加するメンバーを選んでください'); return; }
+  try{
+    await updateDoc(doc(db,'groups',infoGid),{members:arrayUnion(...picks.map(p=>p.value))});
+    toast('メンバーを追加しました'); go('chat');
+  }catch(e){ toast('追加に失敗しました'); }
+});
+const giLeaveBtn=$('#giLeave');
+if(giLeaveBtn) giLeaveBtn.addEventListener('click', async ()=>{
+  try{
+    await updateDoc(doc(db,'groups',infoGid),{members:arrayRemove(uid)});
+    delete state.chats[infoGid]; state.order=state.order.filter(x=>x!==infoGid);
+    teardownChat(); renderList(); toast('グループを退出しました'); go('list');
+  }catch(e){ toast('退出に失敗しました'); }
 });
 async function openAdd(){
   $('#qrId').innerHTML='<span class="pfx">ghost_</span>'+me.id.replace('ghost_','');
@@ -866,7 +1029,7 @@ $('#copyLink').addEventListener('click',()=>{
    ====================================================================== */
 let openCid=null;
 function convId(peerUid){ return [uid,peerUid].sort().join('__'); }
-function msgsCol(peerUid){ return collection(db,'chats',convId(peerUid),'messages'); }
+function msgsCol(conv){ return collection(db,'chats',conv,'messages'); }
 
 function buildTtlStrip(){
   const strip=$('#ttlStrip'); strip.innerHTML='';
@@ -883,39 +1046,43 @@ function teardownChat(){ if(chatUnsub){ chatUnsub(); chatUnsub=null; } openCid=n
 function openChat(cid){
   teardownChat(); openCid=cid;
   const c=state.chats[cid]; if(!c) return;
-  $('#peerAv').firstChild.textContent=initial(c.peer.name||c.peer.id);
-  $('#peerAv').querySelector('.dot').classList.toggle('on',!!c.peer.online);
+  const av=$('#peerAv');
+  if(c.isGroup){ av.classList.add('grp'); av.firstChild.textContent='👥'; }
+  else { av.classList.remove('grp'); av.firstChild.textContent=initial(c.peer.name||c.peer.id); }
+  const dot=av.querySelector('.dot'); if(dot) dot.classList.toggle('on',!!c.peer.online);
   $('#peerName').textContent=c.peer.name||c.peer.id;
   const st=$('#peerStatus');
-  st.textContent = MODE==='cloud' ? 'end-to-end' : (c.peer.online?'online':'last seen recently');
-  st.classList.toggle('off', MODE!=='cloud' && !c.peer.online);
+  st.textContent = c.isGroup ? `${(c.members||[]).length}人のメンバー` : (MODE==='cloud' ? 'end-to-end' : (c.peer.online?'online':'last seen recently'));
+  st.classList.toggle('off', !c.isGroup && MODE!=='cloud' && !c.peer.online);
+  $('#chatHeadMeta').style.cursor = c.isGroup ? 'pointer' : 'default';
   buildTtlStrip(); go('chat');
 
-  if(MODE==='cloud' && c.peer.uid){ subscribeMessages(c.peer.uid); }
+  if(MODE==='cloud' && c.peer.uid){ subscribeMessages(c.conv, c); }
   else { renderThread(); markLocalRead(cid); }
   setTimeout(()=>$('#thread').scrollTop=$('#thread').scrollHeight,60);
 }
 
-function subscribeMessages(peerUid){
-  const c=state.chats[openCid]; c.msgs=[];
+function subscribeMessages(conv, c){
+  c.msgs=[];
   $('#thread').innerHTML='';
-  const sep=document.createElement('div'); sep.className='daysep'; sep.textContent='end-to-end encrypted'; $('#thread').appendChild(sep);
+  const sep=document.createElement('div'); sep.className='daysep'; sep.textContent=c.isGroup?'group · end-to-end':'end-to-end encrypted'; $('#thread').appendChild(sep);
   let lastFrom=null;
   try{
-    chatUnsub=onSnapshot(query(msgsCol(peerUid),orderBy('ts','asc')),snap=>{
+    chatUnsub=onSnapshot(query(msgsCol(conv),orderBy('ts','asc')),snap=>{
       snap.docChanges().forEach(ch=>{
         const id=ch.doc.id, d=ch.doc.data();
         const m=mapMsg(id,d);
         if(ch.type==='added'){
           if(c.msgs.find(x=>x.id===id)) return;
           c.msgs.push(m);
-          const el=renderMsg(m, m.from!==lastFrom); lastFrom=m.from;
+          const el=renderMsg(m, m.from!==lastFrom, c); lastFrom=m.from;
           $('#thread').appendChild(el); $('#thread').scrollTop=$('#thread').scrollHeight;
-          onMsgArrived(peerUid,id,d,m);
+          onMsgArrived(conv,id,d,m,c);
         } else if(ch.type==='modified'){
           const idx=c.msgs.findIndex(x=>x.id===id); if(idx>=0) c.msgs[idx]=m;
           const el=$(`.msg[data-id="${id}"]`,$('#thread'));
           if(el){ const tk=el.querySelector('.tick'); if(tk){ tk.textContent=m.readAt?'既読':'送信'; tk.classList.toggle('read',!!m.readAt); } }
+          if(groupReadComplete(d,c)) deleteCloud(conv,id);
         } else if(ch.type==='removed'){
           const el=$(`.msg[data-id="${id}"]`,$('#thread'));
           c.msgs=c.msgs.filter(x=>x.id!==id);
@@ -925,26 +1092,29 @@ function subscribeMessages(peerUid){
     });
   }catch(e){ toast('メッセージの取得に失敗'); }
 }
+function groupReadComplete(d,c){
+  return c && c.isGroup && d && d.ttl==='read' && c.members &&
+    c.members.filter(u=>u!==d.from).every(u=>d.readBy && d.readBy[u]);
+}
 
 function mapMsg(id,d){
   const out = d.from===uid;
   let readAt=null;
   if(out){ const others=d.readBy?Object.keys(d.readBy).filter(k=>k!==uid):[]; readAt=others.length?d.readBy[others[0]]:null; }
   else { readAt=d.readBy?d.readBy[uid]||null:null; }
-  return {id, from: out?'me':'peer', text:d.text, t:d.ts||now(), ttl:d.ttl, readAt, expireAt:d.expireAt||null, expired:false};
+  return {id, from: out?'me':'peer', fromName:d.fromName||'', fromUid:d.from, text:d.text, t:d.ts||now(), ttl:d.ttl, readAt, expireAt:d.expireAt||null, expired:false};
 }
 
-function onMsgArrived(peerUid,id,d,m){
-  // schedule timed expiry on every client
-  if(typeof ttlMs(m.ttl)==='number' && m.expireAt) scheduleTimedCloud(peerUid,id,m.expireAt);
-  // if it's incoming and I'm viewing → mark read
+function onMsgArrived(conv,id,d,m,c){
+  if(typeof ttlMs(m.ttl)==='number' && m.expireAt) scheduleTimedCloud(conv,id,m.expireAt);
   if(m.from==='peer'){
-    updateDoc(doc(db,'chats',convId(peerUid),'messages',id),{['readBy.'+uid]:now()}).catch(()=>{});
-    if(m.ttl==='read') setTimeout(()=>deleteCloud(peerUid,id),1600); // reader deletes after read
+    updateDoc(doc(db,'chats',conv,'messages',id),{['readBy.'+uid]:now()}).catch(()=>{});
+    if(m.ttl==='read' && !c.isGroup) setTimeout(()=>deleteCloud(conv,id),1600); // 1:1 reader deletes
+    // group 'read' deletion happens when all members have read (see groupReadComplete)
   }
 }
-function scheduleTimedCloud(peerUid,id,expireAt){ const left=expireAt-now(); setTimeout(()=>deleteCloud(peerUid,id),Math.max(0,left)); }
-function deleteCloud(peerUid,id){ deleteDoc(doc(db,'chats',convId(peerUid),'messages',id)).catch(()=>{}); }
+function scheduleTimedCloud(conv,id,expireAt){ const left=expireAt-now(); setTimeout(()=>deleteCloud(conv,id),Math.max(0,left)); }
+function deleteCloud(conv,id){ deleteDoc(doc(db,'chats',conv,'messages',id)).catch(()=>{}); }
 
 /* local thread render */
 function renderThread(){
@@ -959,7 +1129,7 @@ function markLocalRead(cid){
   saveLocal();
 }
 
-function renderMsg(m,gap){
+function renderMsg(m,gap,c){
   const out=m.from==='me';
   const el=document.createElement('div');
   el.className='msg '+(out?'out':'in')+(m.ttl&&m.ttl!=='keep'?' eph':'')+(gap?' gap':'');
@@ -972,7 +1142,8 @@ function renderMsg(m,gap){
     const txt = rule.k==='read' ? '既読後' : countdownText(m);
     ttlTag=`<span class="ttl-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span data-cdval>${txt}</span></span>`;
   }
-  el.innerHTML=`<div class="bubble">${esc(m.text)}</div><div class="meta-line">${ttlTag}${metaR}</div>`;
+  const sender = (c && c.isGroup && !out && gap && m.fromName) ? `<div class="sender">${esc(m.fromName)}</div>` : '';
+  el.innerHTML=`${sender}<div class="bubble">${esc(m.text)}</div><div class="meta-line">${ttlTag}${metaR}</div>`;
   return el;
 }
 function countdownText(m){
@@ -996,20 +1167,25 @@ async function doSend(){
   input.value=''; input.style.height='auto'; sendBtn.disabled=true;
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
-    const peerUid=c.peer.uid;
-    const payload={from:uid, text, ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
+    const conv=c.conv;
+    const payload={from:uid, fromName:me.nick||me.id, text, ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
       expireAt: typeof ms==='number' ? now()+ms : null};
     try{
-      await addDoc(msgsCol(peerUid),payload);  // onSnapshot will render it
+      await addDoc(msgsCol(conv),payload);  // onSnapshot will render it
       const mirror = currentTtl==='keep' ? text : (currentTtl==='read'?'既読後に消えるメッセージ':'消えるメッセージ');
       const upd={lastText:mirror,lastTs:now(),lastFrom:uid};
-      setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId:c.peer.id,...upd},{merge:true}).catch(()=>{});
-      setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, nickname:me.nick||me.id, ...upd},{merge:true}).catch(()=>{});
+      if(c.isGroup){
+        setDoc(doc(db,'groups',conv),upd,{merge:true}).catch(()=>{});
+      } else {
+        const peerUid=c.peer.uid;
+        setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId:c.peer.id,...upd},{merge:true}).catch(()=>{});
+        setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, nickname:me.nick||me.id, ...upd},{merge:true}).catch(()=>{});
+      }
     }catch(e){ toast('送信に失敗しました'); }
   } else {
     const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',text,t:now(),ttl:currentTtl,readAt:null,expired:false};
     c.msgs.push(m); saveLocal();
-    const el=renderMsg(m,true); $('#thread').appendChild(el); $('#thread').scrollTop=$('#thread').scrollHeight;
+    const el=renderMsg(m,true,c); $('#thread').appendChild(el); $('#thread').scrollTop=$('#thread').scrollHeight;
     if(typeof ms==='number') scheduleTimed(openCid,m);
     echoReply(openCid); moveTopLocal(openCid);
   }
@@ -1095,7 +1271,7 @@ function fxLoop(){
 $('#clearChat').addEventListener('click',()=>{
   if(!openCid) return; const c=state.chats[openCid];
   const els=$$('.msg',$('#thread'));
-  if(MODE==='cloud' && c.peer.uid){ c.msgs.forEach(m=>deleteCloud(c.peer.uid,m.id)); }
+  if(MODE==='cloud' && c.peer.uid){ c.msgs.forEach(m=>deleteCloud(c.conv,m.id)); }
   else { c.msgs.forEach(m=>m.expired=true); saveLocal(); }
   let i=0; els.forEach(el=>setTimeout(()=>dissolveEl(el,()=>el.remove()),i++*40));
   toast('会話を消去しました'); renderList();
