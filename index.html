@@ -155,6 +155,19 @@
   .privacy-list b{color:var(--ghost);font-weight:600}
 
   .pad-foot{padding:16px 22px calc(20px + var(--safe-bot));border-top:1px solid var(--line)}
+  .seg{display:flex;gap:6px;background:var(--mist);border:1px solid var(--line);border-radius:13px;padding:4px;margin:10px 0 6px}
+  .seg-btn{flex:1;padding:11px;border:none;background:transparent;color:var(--fade);font:600 13px/1 "Inter";border-radius:9px;cursor:pointer;transition:.2s}
+  .seg-btn.on{background:var(--spectral-soft);color:var(--spectral)}
+  .flabel{display:block;font:600 11px/1 "Space Mono";letter-spacing:.1em;color:var(--fade);margin:20px 0 9px;text-transform:uppercase}
+  .flabel .opt{color:var(--fade-2);font-weight:400;letter-spacing:0;text-transform:none}
+  .input.full{width:100%}
+  .idedit{flex:1;display:flex;align-items:center;background:var(--mist);border:1px solid var(--line);border-radius:13px;padding:0 14px;transition:border .2s}
+  .idedit:focus-within{border-color:var(--spectral-line)}
+  .idedit .pfx{font:700 15px "Space Mono";color:var(--spectral)}
+  .idinput{flex:1;background:transparent;border:none;outline:none;color:var(--ghost);font:700 15px "Space Mono";padding:15px 2px;min-width:0;letter-spacing:.02em}
+  .set-row{display:flex;align-items:center;gap:12px;padding:16px 2px;border-bottom:1px solid var(--line)}
+  .set-row .k{font:400 11px "Space Mono";color:var(--fade);text-transform:uppercase;letter-spacing:.1em;flex:none;width:88px}
+  .set-row .v{flex:1;font:600 15px "Inter";color:var(--ghost);word-break:break-all}
 
   /* ================= CHAT LIST ================= */
   .list{flex:1;overflow-y:auto;padding:6px 0}
@@ -298,25 +311,35 @@
       <h1>Ghosts</h1>
     </div>
     <div class="pad">
-      <span class="eyebrow">Create identity</span>
-      <h2 class="lead">あなたのGhost IDを発行</h2>
-      <p class="sub">電話番号もメールも要りません。匿名IDひとつで会話を始められます。</p>
+      <span class="eyebrow" id="regEyebrow">Create identity</span>
+      <h2 class="lead" id="regLead">プロフィールを作成</h2>
+      <p class="sub" id="regSub">ニックネームとIDを決めましょう。パスワードを設定すれば、別の端末でも同じIDでログインできます（＝IDが増えません）。</p>
 
-      <div class="id-card">
-        <div class="label">Your Ghost ID</div>
+      <div class="seg">
+        <button class="seg-btn on" id="segCreate" type="button">新規作成</button>
+        <button class="seg-btn" id="segLogin" type="button">ログイン</button>
+      </div>
+
+      <div id="formCreate">
+        <label class="flabel">ニックネーム</label>
+        <input class="input full" id="regNick" placeholder="表示名（例: JOJO）" maxlength="20" autocomplete="off" />
+        <label class="flabel">Ghost ID</label>
         <div class="id-row">
-          <div class="id-val" id="newId"><span class="pfx">ghost_</span>——</div>
-          <button class="reroll" id="reroll" type="button" aria-label="再生成">
+          <div class="idedit"><span class="pfx">ghost_</span><input class="idinput" id="regIdInput" maxlength="16" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="myname" /></div>
+          <button class="reroll" id="reroll" type="button" aria-label="ランダム生成">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
           </button>
         </div>
+        <label class="flabel">パスワード <span class="opt">別端末で同じIDを使う用</span></label>
+        <input class="input full" id="regPass" type="password" placeholder="6文字以上" autocomplete="new-password" />
       </div>
 
-      <ul class="privacy-list">
-        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span><b>メッセージごとに寿命を設定。</b>残す／既読後／秒・分・時間・日。1通ずつ選べます。</span></li>
-        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span><b>エンドツーエンド暗号化。</b>サーバーに残す情報は最小限に。</span></li>
-        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg><span><b>消えた会話は復元できません。</b>それがGhostsの約束です。</span></li>
-      </ul>
+      <div id="formLogin" style="display:none">
+        <label class="flabel">Ghost ID</label>
+        <div class="id-row"><div class="idedit"><span class="pfx">ghost_</span><input class="idinput" id="loginIdInput" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="myname" /></div></div>
+        <label class="flabel">パスワード</label>
+        <input class="input full" id="loginPass" type="password" placeholder="パスワード" autocomplete="current-password" />
+      </div>
     </div>
     <div class="pad-foot">
       <button class="btn btn-primary" id="startBtn" type="button">Ghostとして開始</button>
@@ -326,14 +349,38 @@
   <!-- ============ CHAT LIST ============ -->
   <section id="list" class="screen">
     <div class="topbar">
-      <div class="av sm" id="myAv">G<span class="dot on"></span></div>
+      <div class="av sm" id="myAv" style="cursor:pointer">G<span class="dot on"></span></div>
       <h1>Ghosts</h1>
       <div class="spacer"></div>
+      <button class="iconbtn" id="toSettings" type="button" aria-label="設定">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
       <button class="iconbtn" id="toAdd" type="button" aria-label="友達を追加">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
     </div>
     <div class="list" id="chatList"></div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section id="settings" class="screen">
+    <div class="topbar">
+      <button class="iconbtn" data-back="list" type="button" aria-label="戻る">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h1>Settings</h1>
+    </div>
+    <div class="pad">
+      <label class="flabel">ニックネーム</label>
+      <div class="field">
+        <input class="input" id="setNick" maxlength="20" />
+        <button class="btn btn-ghost mini" id="saveNick" type="button" style="width:auto">保存</button>
+      </div>
+      <div class="set-row"><div class="k">Ghost ID</div><div class="v" id="setId">ghost_…</div></div>
+      <div class="set-row"><div class="k">招待</div><div class="v"><a id="setInvite" style="color:var(--spectral);cursor:pointer">招待リンク / QR を開く</a></div></div>
+      <p class="sub" style="margin-top:22px">同じIDを別の端末で使うには、起動画面で「ログイン」を選び、このGhost IDとパスワードでサインインしてください。新しいIDは作られません。</p>
+      <button class="btn btn-ghost" id="logoutBtn" type="button" style="margin-top:20px;color:var(--danger);border-color:rgba(255,107,107,.3)">ログアウト</button>
+    </div>
   </section>
 
   <!-- ============ ADD FRIEND ============ -->
@@ -410,7 +457,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getAuth, signInAnonymously, onAuthStateChanged, EmailAuthProvider, linkWithCredential, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
 /* ======================================================================
@@ -510,11 +557,13 @@ async function boot(){
   try{
     const app=initializeApp(firebaseConfig);
     auth=getAuth(app); db=getFirestore(app);
-    await signInAnonymously(auth);           // throws if Anonymous auth disabled
+    // wait for persisted auth state (restores a previously linked account)
+    const existing=await new Promise(res=>{ const un=onAuthStateChanged(auth,u=>{ un(); res(u); }); });
+    if(!existing) await signInAnonymously(auth);   // throws if Anonymous auth disabled
     uid=auth.currentUser.uid;
     const snap=await getDoc(doc(db,'users',uid)); // throws if Firestore unreachable
     MODE='cloud'; setStatus('cloud');
-    if(snap.exists()) me={uid, id:snap.data().ghostId};
+    if(snap.exists()) me={uid, id:snap.data().ghostId, nick:snap.data().nickname||snap.data().ghostId};
     return;
   }catch(e){
     MODE='local';
@@ -541,27 +590,79 @@ $('#enterBtn').addEventListener('click', async ()=>{
 /* ======================================================================
    REGISTER
    ====================================================================== */
-let pendingId=null;
-function rollId(){ pendingId=genId(); $('#newId').innerHTML='<span class="pfx">ghost_</span>'+pendingId.replace('ghost_',''); }
+let pendingId=null, regMode='create';
+function rollId(){ pendingId=genId(); const el=$('#regIdInput'); if(el) el.value=pendingId.replace('ghost_',''); }
 $('#reroll').addEventListener('click',()=>{ rollId(); const b=$('#reroll'); b.classList.remove('spin'); void b.offsetWidth; b.classList.add('spin'); });
+
+function setRegMode(m){
+  regMode=m;
+  $('#segCreate').classList.toggle('on',m==='create');
+  $('#segLogin').classList.toggle('on',m==='login');
+  $('#formCreate').style.display = m==='create'?'block':'none';
+  $('#formLogin').style.display  = m==='login'?'block':'none';
+  $('#regLead').textContent = m==='create'?'プロフィールを作成':'ログイン';
+  $('#startBtn').textContent = m==='create'?'Ghostとして開始':'ログイン';
+}
+$('#segCreate').addEventListener('click',()=>setRegMode('create'));
+$('#segLogin').addEventListener('click',()=>setRegMode('login'));
+const cleanSuffix=v=>(v||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,16);
+const emailFor=id=>id+'@ghosts.app';
+
 $('#startBtn').addEventListener('click', async ()=>{
-  const id=pendingId||genId();
+  if(regMode==='login') return doLogin();
+  // ---- create ----
+  const nick=$('#regNick').value.trim();
+  const suffix=cleanSuffix($('#regIdInput').value)|| (pendingId||genId()).replace('ghost_','');
+  const id='ghost_'+suffix;
+  const pass=$('#regPass').value;
+  if(suffix.length<3){ toast('IDは3文字以上にしてください'); return; }
   if(MODE==='cloud'){
+    if(pass.length<6){ toast('パスワードは6文字以上にしてください'); return; }
     try{
-      await setDoc(doc(db,'users',uid),{ghostId:id, createdAt:serverTimestamp()});
-      me={uid, id};
-    }catch(e){ toast('登録に失敗しました'); return; }
+      const cred=EmailAuthProvider.credential(emailFor(id), pass);
+      await linkWithCredential(auth.currentUser, cred);   // keep same uid
+    }catch(e){
+      const c=(e&&e.code)||'';
+      if(c.includes('email-already-in-use')) toast('このIDは既に使われています。別のIDにしてください');
+      else if(c.includes('weak-password')) toast('パスワードが弱すぎます（6文字以上）');
+      else if(c.includes('credential-already-in-use')||c.includes('requires-recent-login')) toast('この端末は既に登録済みです');
+      else toast('登録に失敗しました');
+      return;
+    }
+    try{
+      await setDoc(doc(db,'users',uid),{ghostId:id, nickname:nick||id, createdAt:serverTimestamp()});
+      me={uid, id, nick:nick||id};
+    }catch(e){ toast('保存に失敗しました'); return; }
   } else {
-    me={uid:null, id}; state.me=me; seedDemo(); saveLocal();
+    me={uid:null, id, nick:nick||id}; state.me=me; seedDemo(); saveLocal();
   }
   enterApp(); go('list');
 });
+
+async function doLogin(){
+  if(MODE!=='cloud'){ toast('オンライン接続が必要です'); return; }
+  const suffix=cleanSuffix($('#loginIdInput').value);
+  const id='ghost_'+suffix; const pass=$('#loginPass').value;
+  if(suffix.length<3||pass.length<6){ toast('IDとパスワードを確認してください'); return; }
+  try{
+    const uc=await signInWithEmailAndPassword(auth, emailFor(id), pass);
+    uid=uc.user.uid;
+    const snap=await getDoc(doc(db,'users',uid));
+    me={uid, id, nick:(snap.exists()&&snap.data().nickname)||id};
+    myInviteUrl=''; if(me) me.invite=null;
+    enterApp(); go('list');
+  }catch(e){
+    const c=(e&&e.code)||'';
+    if(c.includes('wrong-password')||c.includes('invalid-credential')||c.includes('user-not-found')) toast('IDまたはパスワードが違います');
+    else toast('ログインに失敗しました');
+  }
+}
 
 /* ======================================================================
    APP ENTRY
    ====================================================================== */
 function enterApp(){
-  $('#myAv').firstChild.textContent=initial(me.id);
+  $('#myAv').firstChild.textContent=initial(me.nick||me.id);
   startReaper();
   if(MODE==='cloud') subscribeContacts(); else renderList();
 }
@@ -603,7 +704,7 @@ function subscribeContacts(){
         const cid=ch.doc.id, d=ch.doc.data();
         if(ch.type==='removed'){ delete state.chats[cid]; state.order=state.order.filter(x=>x!==cid); return; }
         const existing=state.chats[cid];
-        state.chats[cid]={peer:{id:d.ghostId,name:d.ghostId,uid:cid,online:true},
+        state.chats[cid]={peer:{id:d.ghostId,name:d.nickname||d.ghostId,uid:cid,online:true},
           msgs:existing?existing.msgs:[], lastText:d.lastText, lastTs:d.lastTs};
         if(!state.order.includes(cid)) state.order.unshift(cid);
       });
@@ -629,7 +730,7 @@ async function ensureInvite(){
       }
       if(!token){
         token=genToken();
-        await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, active:true, createdAt:serverTimestamp()});
+        await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, active:true, createdAt:serverTimestamp()});
         await setDoc(doc(db,'users',uid),{inviteToken:token},{merge:true});
       }
       me.invite=token;
@@ -645,7 +746,7 @@ async function regenInvite(){            // revoke old, issue new
   try{
     if(me.invite) await setDoc(doc(db,'invites',me.invite),{active:false},{merge:true});
     const token=genToken();
-    await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, active:true, createdAt:serverTimestamp()});
+    await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, active:true, createdAt:serverTimestamp()});
     await setDoc(doc(db,'users',uid),{inviteToken:token},{merge:true});
     me.invite=token; myInviteUrl=SITE+'?invite='+token; qrDrawn=false; $('#qrCard').innerHTML='';
     $('#inviteLink').value=myInviteUrl; renderQR();
@@ -654,6 +755,38 @@ async function regenInvite(){            // revoke old, issue new
 }
 
 $('#toAdd').addEventListener('click',openAdd);
+
+/* ---- settings ---- */
+function openSettings(){
+  $('#setNick').value=me.nick||'';
+  $('#setId').textContent=me.id;
+  go('settings');
+}
+const toSet=$('#toSettings'); if(toSet) toSet.addEventListener('click',openSettings);
+$('#myAv').addEventListener('click',openSettings);
+const setInviteLink=$('#setInvite'); if(setInviteLink) setInviteLink.addEventListener('click',openAdd);
+const saveNickBtn=$('#saveNick');
+if(saveNickBtn) saveNickBtn.addEventListener('click', async ()=>{
+  const nick=$('#setNick').value.trim(); if(!nick){ toast('ニックネームを入力してください'); return; }
+  me.nick=nick;
+  $('#myAv').firstChild.textContent=initial(nick);
+  if(MODE==='cloud'){
+    try{
+      await setDoc(doc(db,'users',uid),{nickname:nick},{merge:true});
+      if(me.invite) setDoc(doc(db,'invites',me.invite),{nickname:nick},{merge:true}).catch(()=>{});
+      // best-effort: update how existing contacts see me
+      state.order.forEach(pid=>{ const p=state.chats[pid]; if(p&&p.peer&&p.peer.uid)
+        setDoc(doc(db,'users',p.peer.uid,'contacts',uid),{nickname:nick},{merge:true}).catch(()=>{}); });
+    }catch(e){ toast('保存に失敗しました'); return; }
+  } else { state.me=me; saveLocal(); }
+  toast('ニックネームを保存しました'); go('list');
+});
+const logoutBtn=$('#logoutBtn');
+if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{
+  try{ if(MODE==='cloud'&&auth) await signOut(auth); }catch(e){}
+  try{ localStorage.removeItem(LS); }catch(e){}
+  location.reload();
+});
 async function openAdd(){
   $('#qrId').innerHTML='<span class="pfx">ghost_</span>'+me.id.replace('ghost_','');
   go('add');
@@ -696,30 +829,30 @@ async function acceptInvite(token){
     if(!snap.exists()||snap.data().active===false){ toast('無効な招待リンクです'); return; }
     const d=snap.data();
     if(d.from===uid){ toast('自分の招待リンクです'); return; }
-    showConnect(d.ghostId, d.from);
+    showConnect(d.ghostId, d.nickname||d.ghostId, d.from);
   }catch(e){ toast('招待の確認に失敗しました'); }
 }
 async function acceptLegacy(ghostId){     // local demo only
-  showConnect(ghostId, null);
+  showConnect(ghostId, ghostId, null);
 }
-function showConnect(ghostId,peerUid){
-  $('#resAv').textContent=initial(ghostId);
-  $('#resName').textContent=ghostId; $('#resId').textContent=peerUid?'招待を承認して接続':'demo';
+function showConnect(ghostId,nick,peerUid){
+  $('#resAv').textContent=initial(nick);
+  $('#resName').textContent=nick; $('#resId').textContent=ghostId;
   $('#searchResult').classList.add('show');
   $('#addBtn').textContent='接続';
-  $('#addBtn').onclick=()=>{ connectWith(ghostId,peerUid); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
+  $('#addBtn').onclick=()=>{ connectWith(ghostId,nick,peerUid); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
 }
-async function connectWith(ghostId,peerUid){
+async function connectWith(ghostId,nick,peerUid){
   if(MODE==='cloud' && peerUid){
     try{
       await setDoc(doc(db,'connections',convId(peerUid)),{members:[uid,peerUid].sort(),createdAt:serverTimestamp()},{merge:true});
-      await setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId, addedAt:serverTimestamp()},{merge:true});
-      await setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, addedAt:serverTimestamp()},{merge:true});
+      await setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId, nickname:nick||ghostId, addedAt:serverTimestamp()},{merge:true});
+      await setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, nickname:me.nick||me.id, addedAt:serverTimestamp()},{merge:true});
     }catch(e){ toast('接続に失敗しました'); return; }
-    toast(ghostId+' と接続しました'); openChat(peerUid);
+    toast((nick||ghostId)+' と接続しました'); openChat(peerUid);
   } else {
-    if(!state.chats[ghostId]){ state.chats[ghostId]={peer:{id:ghostId,name:ghostId,online:Math.random()>0.4},msgs:[]}; state.order.unshift(ghostId); saveLocal(); }
-    toast(ghostId+' と接続しました'); renderList(); openChat(ghostId);
+    if(!state.chats[ghostId]){ state.chats[ghostId]={peer:{id:ghostId,name:nick||ghostId,online:Math.random()>0.4},msgs:[]}; state.order.unshift(ghostId); saveLocal(); }
+    toast((nick||ghostId)+' と接続しました'); renderList(); openChat(ghostId);
   }
 }
 $('#copyLink').addEventListener('click',()=>{
@@ -870,7 +1003,7 @@ async function doSend(){
       const mirror = currentTtl==='keep' ? text : (currentTtl==='read'?'既読後に消えるメッセージ':'消えるメッセージ');
       const upd={lastText:mirror,lastTs:now(),lastFrom:uid};
       setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId:c.peer.id,...upd},{merge:true}).catch(()=>{});
-      setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id,...upd},{merge:true}).catch(()=>{});
+      setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, nickname:me.nick||me.id, ...upd},{merge:true}).catch(()=>{});
     }catch(e){ toast('送信に失敗しました'); }
   } else {
     const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',text,t:now(),ttl:currentTtl,readAt:null,expired:false};
