@@ -406,49 +406,64 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script>
-"use strict";
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+
 /* ======================================================================
-   Ghosts — Phase 1 front-end
+   Ghosts — Phase 2 : Firebase realtime + per-message TTL (server delete)
+   Falls back to a local demo (Ghost helper bot) if Firebase isn't reachable.
    ====================================================================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyD9842yjEXJwNnW6BXa--Mmi4V1BaKdQN4",
+  authDomain: "ghosts-ef885.firebaseapp.com",
+  projectId: "ghosts-ef885",
+  storageBucket: "ghosts-ef885.firebasestorage.app",
+  messagingSenderId: "563395377475",
+  appId: "1:563395377475:web:17276f8624a13c501117f6"
+};
+
 const $ = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
 const SITE = location.origin + location.pathname.replace(/index\.html?$/,'');
+const now = ()=>Date.now();
 
-/* ---------- TTL rules (the core differentiator) ---------- */
+let MODE='local';            // 'cloud' once Firebase is confirmed reachable
+let auth=null, db=null, uid=null;
+let me=null;                 // {id: ghost_xxx, uid}
+let chatUnsub=null;          // active chat message listener
+let contactsUnsub=null;
+
+/* ---------- TTL rules (core differentiator) ---------- */
 const TTL = [
-  {k:'keep',  label:'残す',     ms:null},
-  {k:'read',  label:'既読後',   ms:'read'},
-  {k:'10s',   label:'10秒',     ms:10e3},
-  {k:'30s',   label:'30秒',     ms:30e3},
-  {k:'1m',    label:'1分',      ms:60e3},
-  {k:'5m',    label:'5分',      ms:5*60e3},
-  {k:'10m',   label:'10分',     ms:10*60e3},
-  {k:'30m',   label:'30分',     ms:30*60e3},
-  {k:'1h',    label:'1時間',    ms:60*60e3},
-  {k:'6h',    label:'6時間',    ms:6*60*60e3},
-  {k:'12h',   label:'12時間',   ms:12*60*60e3},
-  {k:'24h',   label:'24時間',   ms:24*60*60e3},
-  {k:'7d',    label:'7日',      ms:7*24*60*60e3},
+  {k:'keep', label:'残す',   ms:null},
+  {k:'read', label:'既読後', ms:'read'},
+  {k:'10s',  label:'10秒',   ms:10e3},
+  {k:'30s',  label:'30秒',   ms:30e3},
+  {k:'1m',   label:'1分',    ms:60e3},
+  {k:'5m',   label:'5分',    ms:5*60e3},
+  {k:'10m',  label:'10分',   ms:10*60e3},
+  {k:'30m',  label:'30分',   ms:30*60e3},
+  {k:'1h',   label:'1時間',  ms:60*60e3},
+  {k:'6h',   label:'6時間',  ms:6*60*60e3},
+  {k:'12h',  label:'12時間', ms:12*60*60e3},
+  {k:'24h',  label:'24時間', ms:24*60*60e3},
+  {k:'7d',   label:'7日',    ms:7*24*60*60e3},
 ];
-let currentTtl = 'read'; // default = ephemeral, tells the brand story
+const ttlMs = k => { const r=TTL.find(x=>x.k===k); return r?r.ms:null; };
+let currentTtl='read';
 
-/* ---------- state / storage ---------- */
-const LS = 'ghosts.v1';
-let state = load();
-function load(){
-  try{ const s = JSON.parse(localStorage.getItem(LS)); if(s&&s.me) return s; }catch(e){}
-  return {me:null, chats:{}, order:[]};
-}
-function save(){ try{ localStorage.setItem(LS, JSON.stringify(state)); }catch(e){} }
+/* ---------- local state (also caches cloud contacts in memory) ---------- */
+const LS='ghosts.v1';
+let state=loadLocal();
+function loadLocal(){ try{const s=JSON.parse(localStorage.getItem(LS)); if(s) return s;}catch(e){} return {me:null,chats:{},order:[]}; }
+function saveLocal(){ try{ if(MODE==='local') localStorage.setItem(LS, JSON.stringify(state)); }catch(e){} }
 
-function genId(){
-  const c='abcdefghijkmnpqrstuvwxyz23456789';
-  let s=''; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)];
-  return 'ghost_'+s;
-}
-function initial(name){ return (name||'G').replace('ghost_','').charAt(0).toUpperCase(); }
-function now(){ return Date.now(); }
+function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)]; return 'ghost_'+s; }
+function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmtTime(t){ const d=new Date(t); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); }
 
 /* ---------- router ---------- */
 let activeScreen='splash';
@@ -457,19 +472,17 @@ function go(id){
   const cur=$('#'+activeScreen), nxt=$('#'+id);
   cur.classList.remove('active'); cur.classList.add('leaving');
   setTimeout(()=>cur.classList.remove('leaving'),360);
-  nxt.classList.add('active');
-  activeScreen=id;
+  nxt.classList.add('active'); activeScreen=id;
+  if(id!=='chat') teardownChat();
 }
 $$('[data-back]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.back)));
 
 /* ======================================================================
-   SPLASH — app icon launch screen + ambient particles
+   SPLASH ambient + boot
    ====================================================================== */
-/* ambient drifting particles behind splash */
 const amb=$('#ambient'), actx=amb.getContext('2d'); let aP=[];
 function sizeAmbient(){ amb.width=amb.offsetWidth; amb.height=amb.offsetHeight;
-  aP=Array.from({length:34},()=>({x:Math.random()*amb.width,y:Math.random()*amb.height,
-    r:Math.random()*1.6+0.4,s:Math.random()*0.3+0.05,a:Math.random()*0.4+0.1})); }
+  aP=Array.from({length:34},()=>({x:Math.random()*amb.width,y:Math.random()*amb.height,r:Math.random()*1.6+0.4,s:Math.random()*0.3+0.05,a:Math.random()*0.4+0.1})); }
 function drawAmbient(){
   if(activeScreen!=='splash'){ requestAnimationFrame(drawAmbient); return; }
   actx.clearRect(0,0,amb.width,amb.height);
@@ -477,74 +490,136 @@ function drawAmbient(){
     actx.fillStyle=`rgba(47,231,168,${p.a})`; actx.beginPath(); actx.arc(p.x,p.y,p.r,0,7); actx.fill(); }
   requestAnimationFrame(drawAmbient);
 }
+sizeAmbient(); drawAmbient(); window.addEventListener('resize',sizeAmbient);
 
-sizeAmbient(); drawAmbient();
-window.addEventListener('resize',sizeAmbient);
+/* connection status pill */
+function setStatus(mode, detail){
+  let el=$('#netPill');
+  if(!el){ el=document.createElement('div'); el.id='netPill'; document.body.appendChild(el);
+    el.style.cssText='position:fixed;top:calc(8px + env(safe-area-inset-top,0));left:50%;transform:translateX(-50%);z-index:70;font:600 11px/1 Inter;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:rgba(13,15,21,.85);backdrop-filter:blur(8px);display:flex;gap:6px;align-items:center;transition:.4s'; }
+  if(mode==='cloud'){ el.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:var(--spectral);box-shadow:0 0 8px var(--spectral)"></span>オンライン'; el.style.color='var(--ghost)';
+    setTimeout(()=>{ el.style.opacity='0'; },2500); }
+  else { el.style.opacity='1'; el.style.color='#ffd27a'; el.style.borderColor='rgba(255,210,122,.4)';
+    el.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:#ffd27a"></span>ローカルモード'+(detail?` · ${esc(detail)}`:''); }
+}
 
-$('#enterBtn').addEventListener('click',()=>{
+let bootPromise=boot();
+async function boot(){
+  try{
+    const app=initializeApp(firebaseConfig);
+    auth=getAuth(app); db=getFirestore(app);
+    await signInAnonymously(auth);           // throws if Anonymous auth disabled
+    uid=auth.currentUser.uid;
+    const snap=await getDoc(doc(db,'users',uid)); // throws if Firestore unreachable
+    MODE='cloud'; setStatus('cloud');
+    if(snap.exists()) me={uid, id:snap.data().ghostId};
+    return;
+  }catch(e){
+    MODE='local';
+    const code=(e&&e.code)||'';
+    let hint='';
+    if(code.includes('operation-not-allowed')) hint='匿名ログイン未設定';
+    else if(code.includes('unavailable')||code.includes('not-found')) hint='Firestore未作成';
+    else if(code.includes('permission')) hint='ルール要確認';
+    setStatus('local', hint);
+    me = state.me;
+    if(!state.order||!state.order.length) seedDemo();
+  }
+}
+
+$('#enterBtn').addEventListener('click', async ()=>{
   $('#splash').classList.add('exit');
+  await bootPromise;
   setTimeout(()=>{
-    if(state.me){ enterApp(); go('list'); }
+    if(me){ enterApp(); go('list'); }
     else { go('register'); rollId(); }
   },480);
 });
 
 /* ======================================================================
-   REGISTER (Priority 2 entry)
+   REGISTER
    ====================================================================== */
 let pendingId=null;
-function rollId(){
-  pendingId=genId();
-  $('#newId').innerHTML='<span class="pfx">ghost_</span>'+pendingId.replace('ghost_','');
-}
+function rollId(){ pendingId=genId(); $('#newId').innerHTML='<span class="pfx">ghost_</span>'+pendingId.replace('ghost_',''); }
 $('#reroll').addEventListener('click',()=>{ rollId(); const b=$('#reroll'); b.classList.remove('spin'); void b.offsetWidth; b.classList.add('spin'); });
-$('#startBtn').addEventListener('click',()=>{
-  state.me={id:pendingId||genId(), name:'You'};
-  seedDemo();
-  save(); enterApp(); go('list');
+$('#startBtn').addEventListener('click', async ()=>{
+  const id=pendingId||genId();
+  if(MODE==='cloud'){
+    try{
+      await setDoc(doc(db,'users',uid),{ghostId:id, createdAt:serverTimestamp()});
+      await setDoc(doc(db,'ghostIndex',id),{uid, createdAt:serverTimestamp()});
+      me={uid, id};
+    }catch(e){ toast('登録に失敗しました'); return; }
+  } else {
+    me={uid:null, id}; state.me=me; seedDemo(); saveLocal();
+  }
+  enterApp(); go('list');
 });
 
 /* ======================================================================
-   APP ENTRY / CHAT LIST
+   APP ENTRY
    ====================================================================== */
 function enterApp(){
-  $('#myAv').firstChild.textContent=initial(state.me.id);
-  renderList();
+  $('#myAv').firstChild.textContent=initial(me.id);
   startReaper();
+  if(MODE==='cloud') subscribeContacts(); else renderList();
 }
-function peerOf(cid){ return state.chats[cid]?.peer; }
 
+/* ======================================================================
+   CHAT LIST
+   ====================================================================== */
 function renderList(){
   const wrap=$('#chatList');
   if(!state.order.length){
     wrap.innerHTML=`<div class="empty">
       <svg width="46" height="46" viewBox="0 0 32 32"><path fill="#454c57" d="M16 3c-6 0-10 4.6-10 11v13.2c0 1 0 1.8 1.1 1.3 1-.5 1.8-1.6 2.6-1.6.9 0 1.5 1.6 2.7 1.6 1.1 0 1.7-1.6 2.6-1.6.9 0 1.6 1.6 2.7 1.6 1.1 0 1.7-1.6 2.6-1.6.8 0 1.6 1.1 2.6 1.6 1.1.5 1.1-.3 1.1-1.3V14C26 7.6 22 3 16 3z"/></svg>
-      <p>まだ会話はありません。<br>＋ から Ghost を追加して始めましょう。</p></div>`;
+      <p>まだ会話はありません。<br>＋ から Ghost ID を追加して始めましょう。</p></div>`;
     return;
   }
   wrap.innerHTML='';
   state.order.forEach(cid=>{
-    const c=state.chats[cid]; const last=c.msgs[c.msgs.length-1];
+    const c=state.chats[cid]; if(!c) return;
+    const last=c.msgs[c.msgs.length-1];
+    let prev='<div class="prev gone">新しい会話</div>';
+    if(c.lastText!==undefined && c.lastText!=='') prev=`<div class="prev">${esc(c.lastText)}</div>`;
+    else if(c.lastText==='') prev='<div class="prev gone">消えるメッセージ</div>';
+    else if(last) prev = last.expired?'<div class="prev gone">メッセージは消えました</div>':`<div class="prev">${last.from==='me'?'あなた: ':''}${esc(last.text)}</div>`;
+    const t = c.lastTs || (last&&last.t);
     const row=document.createElement('div'); row.className='chat-row';
-    const prev = last ? (last.expired?'<span class="prev gone">メッセージは消えました</span>'
-                                     : `<div class="prev">${last.from==='me'?'あなた: ':''}${esc(last.text)}</div>`)
-                      : '<div class="prev gone">新しい会話</div>';
     row.innerHTML=`<div class="av sm">${initial(c.peer.name||c.peer.id)}<span class="dot ${c.peer.online?'on':''}"></span></div>
-      <div class="meta"><div class="nm"><b>${esc(c.peer.name||c.peer.id)}</b><time>${last?fmtTime(last.t):''}</time></div>${prev}</div>`;
+      <div class="meta"><div class="nm"><b>${esc(c.peer.name||c.peer.id)}</b><time>${t?fmtTime(t):''}</time></div>${prev}</div>`;
     row.addEventListener('click',()=>openChat(cid));
     wrap.appendChild(row);
   });
 }
 
+/* cloud: contacts collection → list */
+function subscribeContacts(){
+  if(contactsUnsub) contactsUnsub();
+  try{
+    contactsUnsub=onSnapshot(collection(db,'users',uid,'contacts'),snap=>{
+      snap.docChanges().forEach(ch=>{
+        const cid=ch.doc.id, d=ch.doc.data();
+        if(ch.type==='removed'){ delete state.chats[cid]; state.order=state.order.filter(x=>x!==cid); return; }
+        const existing=state.chats[cid];
+        state.chats[cid]={peer:{id:d.ghostId,name:d.ghostId,uid:cid,online:true},
+          msgs:existing?existing.msgs:[], lastText:d.lastText, lastTs:d.lastTs};
+        if(!state.order.includes(cid)) state.order.unshift(cid);
+      });
+      state.order.sort((a,b)=>(state.chats[b]?.lastTs||0)-(state.chats[a]?.lastTs||0));
+      renderList();
+    });
+  }catch(e){ renderList(); }
+}
+
 /* ======================================================================
-   ADD FRIEND (Priority 2 + 3)
+   ADD FRIEND
    ====================================================================== */
-$('#toAdd').addEventListener('click',()=>{ openAdd(); });
+$('#toAdd').addEventListener('click',openAdd);
 function openAdd(){
-  $('#qrId').innerHTML='<span class="pfx">ghost_</span>'+state.me.id.replace('ghost_','');
-  $('#inviteLink').value=SITE+'?add='+state.me.id;
-  renderQR();
-  go('add');
+  $('#qrId').innerHTML='<span class="pfx">ghost_</span>'+me.id.replace('ghost_','');
+  $('#inviteLink').value=SITE+'?add='+me.id;
+  renderQR(); go('add');
 }
 $$('.tab').forEach(t=>t.addEventListener('click',()=>{
   $$('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on');
@@ -553,46 +628,57 @@ $$('.tab').forEach(t=>t.addEventListener('click',()=>{
 }));
 let qrDrawn=false;
 function renderQR(){
-  if(qrDrawn) return;
-  try{ new QRCode($('#qrCard'),{text:SITE+'?add='+state.me.id,width:190,height:190,
-    colorDark:'#07080b',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M}); qrDrawn=true; }catch(e){}
+  if(qrDrawn||typeof QRCode==='undefined') return;
+  try{ new QRCode($('#qrCard'),{text:SITE+'?add='+me.id,width:190,height:190,colorDark:'#07080b',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M}); qrDrawn=true; }catch(e){}
 }
 $('#searchBtn').addEventListener('click',doSearch);
 $('#searchId').addEventListener('keydown',e=>{ if(e.key==='Enter') doSearch(); });
-function doSearch(){
+async function doSearch(){
   let q=$('#searchId').value.trim().toLowerCase();
   if(!q) return;
   if(!q.startsWith('ghost_')) q='ghost_'+q.replace(/[^a-z0-9]/g,'');
-  if(q===state.me.id){ toast('それはあなた自身のIDです'); return; }
-  // Phase1: no backend → any well-formed ID resolves to a discoverable Ghost
-  const name=q;
-  $('#resAv').textContent=initial(name);
-  $('#resName').textContent=name;
-  $('#resId').textContent=q;
-  $('#searchResult').classList.add('show');
-  $('#addBtn').onclick=()=>{ addContact(q,name); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
-}
-function addContact(id,name){
-  const cid=id;
-  if(!state.chats[cid]){
-    state.chats[cid]={peer:{id,name:name||id,online:Math.random()>0.4},msgs:[]};
-    state.order.unshift(cid);
-    save();
+  if(q===me.id){ toast('それはあなた自身のIDです'); return; }
+  if(MODE==='cloud'){
+    try{
+      const snap=await getDoc(doc(db,'ghostIndex',q));
+      if(!snap.exists()){ toast('このIDのGhostは見つかりません'); $('#searchResult').classList.remove('show'); return; }
+      const peerUid=snap.data().uid;
+      showResult(q,q,peerUid);
+    }catch(e){ toast('検索に失敗しました'); }
+  } else {
+    showResult(q,q,null); // local: any well-formed id resolves
   }
-  toast(name+' を追加しました');
-  renderList();
-  openChat(cid);
+}
+function showResult(name,id,peerUid){
+  $('#resAv').textContent=initial(name);
+  $('#resName').textContent=name; $('#resId').textContent=id;
+  $('#searchResult').classList.add('show');
+  $('#addBtn').onclick=()=>{ addContact(id,name,peerUid); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
+}
+async function addContact(id,name,peerUid){
+  if(MODE==='cloud' && peerUid){
+    try{
+      await setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId:id, addedAt:serverTimestamp()},{merge:true});
+      await setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, addedAt:serverTimestamp()},{merge:true});
+    }catch(e){ toast('追加に失敗しました'); return; }
+    toast(name+' を追加しました');
+    openChat(peerUid);
+  } else {
+    if(!state.chats[id]){ state.chats[id]={peer:{id,name,online:Math.random()>0.4},msgs:[]}; state.order.unshift(id); saveLocal(); }
+    toast(name+' を追加しました'); renderList(); openChat(id);
+  }
 }
 $('#copyLink').addEventListener('click',()=>{
   const v=$('#inviteLink').value;
-  navigator.clipboard?.writeText(v).then(()=>toast('リンクをコピーしました'),()=>fallbackCopy(v));
+  (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('リンクをコピーしました'),()=>{ const i=$('#inviteLink'); i.select(); document.execCommand('copy'); toast('リンクをコピーしました'); });
 });
-function fallbackCopy(v){ const i=$('#inviteLink'); i.select(); document.execCommand('copy'); toast('リンクをコピーしました'); }
 
 /* ======================================================================
-   CHAT (Priority 4) — bubbles, TTL, dissolve effect
+   CHAT
    ====================================================================== */
-let openCid=null, reaperTimer=null;
+let openCid=null;
+function convId(peerUid){ return [uid,peerUid].sort().join('__'); }
+function msgsCol(peerUid){ return collection(db,'chats',convId(peerUid),'messages'); }
 
 function buildTtlStrip(){
   const strip=$('#ttlStrip'); strip.innerHTML='';
@@ -604,54 +690,107 @@ function buildTtlStrip(){
     strip.appendChild(b);
   });
 }
+function teardownChat(){ if(chatUnsub){ chatUnsub(); chatUnsub=null; } openCid=null; }
+
 function openChat(cid){
-  openCid=cid; const c=state.chats[cid];
+  teardownChat(); openCid=cid;
+  const c=state.chats[cid]; if(!c) return;
   $('#peerAv').firstChild.textContent=initial(c.peer.name||c.peer.id);
   $('#peerAv').querySelector('.dot').classList.toggle('on',!!c.peer.online);
   $('#peerName').textContent=c.peer.name||c.peer.id;
-  const st=$('#peerStatus'); st.textContent=c.peer.online?'online':'last seen recently'; st.classList.toggle('off',!c.peer.online);
-  buildTtlStrip();
-  renderThread();
-  go('chat');
+  const st=$('#peerStatus');
+  st.textContent = MODE==='cloud' ? 'end-to-end' : (c.peer.online?'online':'last seen recently');
+  st.classList.toggle('off', MODE!=='cloud' && !c.peer.online);
+  buildTtlStrip(); go('chat');
+
+  if(MODE==='cloud' && c.peer.uid){ subscribeMessages(c.peer.uid); }
+  else { renderThread(); markLocalRead(cid); }
   setTimeout(()=>$('#thread').scrollTop=$('#thread').scrollHeight,60);
-  // mark incoming as read (we're looking at them)
-  c.msgs.forEach(m=>{ if(m.from==='peer'&&!m.readAt){ m.readAt=now(); if(m.ttl==='read') scheduleRead(cid,m); } });
-  save();
 }
+
+function subscribeMessages(peerUid){
+  const c=state.chats[openCid]; c.msgs=[];
+  $('#thread').innerHTML='';
+  const sep=document.createElement('div'); sep.className='daysep'; sep.textContent='end-to-end encrypted'; $('#thread').appendChild(sep);
+  let lastFrom=null;
+  try{
+    chatUnsub=onSnapshot(query(msgsCol(peerUid),orderBy('ts','asc')),snap=>{
+      snap.docChanges().forEach(ch=>{
+        const id=ch.doc.id, d=ch.doc.data();
+        const m=mapMsg(id,d);
+        if(ch.type==='added'){
+          if(c.msgs.find(x=>x.id===id)) return;
+          c.msgs.push(m);
+          const el=renderMsg(m, m.from!==lastFrom); lastFrom=m.from;
+          $('#thread').appendChild(el); $('#thread').scrollTop=$('#thread').scrollHeight;
+          onMsgArrived(peerUid,id,d,m);
+        } else if(ch.type==='modified'){
+          const idx=c.msgs.findIndex(x=>x.id===id); if(idx>=0) c.msgs[idx]=m;
+          const el=$(`.msg[data-id="${id}"]`,$('#thread'));
+          if(el){ const tk=el.querySelector('.tick'); if(tk){ tk.textContent=m.readAt?'既読':'送信'; tk.classList.toggle('read',!!m.readAt); } }
+        } else if(ch.type==='removed'){
+          const el=$(`.msg[data-id="${id}"]`,$('#thread'));
+          c.msgs=c.msgs.filter(x=>x.id!==id);
+          if(el) dissolveEl(el,()=>el.remove());
+        }
+      });
+    });
+  }catch(e){ toast('メッセージの取得に失敗'); }
+}
+
+function mapMsg(id,d){
+  const out = d.from===uid;
+  let readAt=null;
+  if(out){ const others=d.readBy?Object.keys(d.readBy).filter(k=>k!==uid):[]; readAt=others.length?d.readBy[others[0]]:null; }
+  else { readAt=d.readBy?d.readBy[uid]||null:null; }
+  return {id, from: out?'me':'peer', text:d.text, t:d.ts||now(), ttl:d.ttl, readAt, expireAt:d.expireAt||null, expired:false};
+}
+
+function onMsgArrived(peerUid,id,d,m){
+  // schedule timed expiry on every client
+  if(typeof ttlMs(m.ttl)==='number' && m.expireAt) scheduleTimedCloud(peerUid,id,m.expireAt);
+  // if it's incoming and I'm viewing → mark read
+  if(m.from==='peer'){
+    updateDoc(doc(db,'chats',convId(peerUid),'messages',id),{['readBy.'+uid]:now()}).catch(()=>{});
+    if(m.ttl==='read') setTimeout(()=>deleteCloud(peerUid,id),1600); // reader deletes after read
+  }
+}
+function scheduleTimedCloud(peerUid,id,expireAt){ const left=expireAt-now(); setTimeout(()=>deleteCloud(peerUid,id),Math.max(0,left)); }
+function deleteCloud(peerUid,id){ deleteDoc(doc(db,'chats',convId(peerUid),'messages',id)).catch(()=>{}); }
+
+/* local thread render */
 function renderThread(){
   const c=state.chats[openCid], th=$('#thread'); th.innerHTML='';
   const sep=document.createElement('div'); sep.className='daysep'; sep.textContent='end-to-end encrypted'; th.appendChild(sep);
   let lastFrom=null;
-  c.msgs.forEach(m=>{
-    if(m.expired) return;
-    th.appendChild(renderMsg(m, m.from!==lastFrom));
-    lastFrom=m.from;
-  });
+  c.msgs.forEach(m=>{ if(m.expired) return; th.appendChild(renderMsg(m,m.from!==lastFrom)); lastFrom=m.from; });
 }
-function renderMsg(m, gap){
+function markLocalRead(cid){
+  const c=state.chats[cid];
+  c.msgs.forEach(m=>{ if(m.from==='peer'&&!m.readAt){ m.readAt=now(); if(m.ttl==='read') scheduleRead(cid,m); } });
+  saveLocal();
+}
+
+function renderMsg(m,gap){
   const out=m.from==='me';
   const el=document.createElement('div');
   el.className='msg '+(out?'out':'in')+(m.ttl&&m.ttl!=='keep'?' eph':'')+(gap?' gap':'');
   el.dataset.id=m.id;
   let metaR='';
-  if(out){
-    const read=m.readAt;
-    metaR=`<span class="tick ${read?'read':''}">${read?'既読':'送信'}</span>`;
-  }
+  if(out){ metaR=`<span class="tick ${m.readAt?'read':''}">${m.readAt?'既読':'送信'}</span>`; }
   let ttlTag='';
   const rule=TTL.find(r=>r.k===m.ttl);
   if(rule && rule.k!=='keep'){
     const txt = rule.k==='read' ? '既読後' : countdownText(m);
-    ttlTag=`<span class="ttl-pill" data-cd><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span data-cdval>${txt}</span></span>`;
+    ttlTag=`<span class="ttl-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span data-cdval>${txt}</span></span>`;
   }
   el.innerHTML=`<div class="bubble">${esc(m.text)}</div><div class="meta-line">${ttlTag}${metaR}</div>`;
   return el;
 }
 function countdownText(m){
-  const rule=TTL.find(r=>r.k===m.ttl);
-  if(!rule||typeof rule.ms!=='number') return '';
-  const left=Math.max(0, m.t + rule.ms - now());
-  const s=Math.ceil(left/1000);
+  const ms=ttlMs(m.ttl); if(typeof ms!=='number') return '';
+  const target = m.expireAt || (m.t+ms);
+  const left=Math.max(0,target-now()); const s=Math.ceil(left/1000);
   if(s>=86400) return Math.ceil(s/86400)+'日';
   if(s>=3600) return Math.floor(s/3600)+':'+String(Math.floor(s%3600/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
   if(s>=60) return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
@@ -663,138 +802,122 @@ const input=$('#msgInput'), sendBtn=$('#sendBtn');
 input.addEventListener('input',()=>{ input.style.height='auto'; input.style.height=Math.min(120,input.scrollHeight)+'px'; sendBtn.disabled=!input.value.trim(); });
 input.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); doSend(); } });
 sendBtn.addEventListener('click',doSend);
-function doSend(){
-  const text=input.value.trim(); if(!text) return;
+async function doSend(){
+  const text=input.value.trim(); if(!text||!openCid) return;
   const c=state.chats[openCid];
-  const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',text,t:now(),ttl:currentTtl,readAt:null,expired:false};
-  c.msgs.push(m); save();
   input.value=''; input.style.height='auto'; sendBtn.disabled=true;
-  const el=renderMsg(m,true); $('#thread').appendChild(el);
-  $('#thread').scrollTop=$('#thread').scrollHeight;
-  if(typeof TTL.find(r=>r.k===m.ttl).ms==='number') scheduleTimed(openCid,m);
-  echoReply(openCid);
-  moveTop(openCid);
+  const ms=ttlMs(currentTtl);
+  if(MODE==='cloud' && c.peer.uid){
+    const peerUid=c.peer.uid;
+    const payload={from:uid, text, ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
+      expireAt: typeof ms==='number' ? now()+ms : null};
+    try{
+      await addDoc(msgsCol(peerUid),payload);  // onSnapshot will render it
+      const mirror = currentTtl==='keep' ? text : (currentTtl==='read'?'既読後に消えるメッセージ':'消えるメッセージ');
+      const upd={lastText:mirror,lastTs:now(),lastFrom:uid};
+      setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId:c.peer.id,...upd},{merge:true}).catch(()=>{});
+      setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id,...upd},{merge:true}).catch(()=>{});
+    }catch(e){ toast('送信に失敗しました'); }
+  } else {
+    const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',text,t:now(),ttl:currentTtl,readAt:null,expired:false};
+    c.msgs.push(m); saveLocal();
+    const el=renderMsg(m,true); $('#thread').appendChild(el); $('#thread').scrollTop=$('#thread').scrollHeight;
+    if(typeof ms==='number') scheduleTimed(openCid,m);
+    echoReply(openCid); moveTopLocal(openCid);
+  }
 }
-function moveTop(cid){ state.order=state.order.filter(x=>x!==cid); state.order.unshift(cid); save(); }
+function moveTopLocal(cid){ state.order=state.order.filter(x=>x!==cid); state.order.unshift(cid); saveLocal(); }
 
-/* ---- demo echo bot (simulates the other Ghost until Firebase lands) ---- */
-const ECHO=[
-  '了解。これ、すぐ消していい？','読んだら消える設定、便利だね','OK 受け取った 👻',
-  'なるほど。証拠は残さない主義なんで','これは「残す」にしとくね','秒で消えるの面白い',
-  'うん、把握した','その話、24時間で忘れることにする'
-];
+/* ======================================================================
+   LOCAL demo helper bot (fallback / onboarding)
+   ====================================================================== */
+const ECHO=['了解。これ、すぐ消していい？','読んだら消える設定、便利だね','OK 受け取った 👻','なるほど。証拠は残さない主義なんで','これは「残す」にしとくね','秒で消えるの面白い','うん、把握した','その話、24時間で忘れることにする'];
 function echoReply(cid){
   const c=state.chats[cid]; if(!c.peer.online) return;
-  // mark my last sent message read shortly after
-  setTimeout(()=>{
-    const mine=[...c.msgs].reverse().find(m=>m.from==='me'&&!m.readAt&&!m.expired);
-    if(mine){ mine.readAt=now(); save();
-      const el=$(`.msg[data-id="${mine.id}"] .tick`,$('#thread')); if(el){el.textContent='既読';el.classList.add('read');}
-      if(mine.ttl==='read') scheduleRead(cid,mine);
-    }
-  },900);
-  // typing → reply
+  setTimeout(()=>{ const mine=[...c.msgs].reverse().find(m=>m.from==='me'&&!m.readAt&&!m.expired);
+    if(mine){ mine.readAt=now(); saveLocal(); const el=$(`.msg[data-id="${mine.id}"] .tick`,$('#thread')); if(el){el.textContent='既読';el.classList.add('read');} if(mine.ttl==='read') scheduleRead(cid,mine); } },900);
   const th=$('#thread'); const tEl=document.createElement('div'); tEl.className='typing'; tEl.innerHTML='<i></i><i></i><i></i>';
   setTimeout(()=>{ if(openCid===cid){ th.appendChild(tEl); th.scrollTop=th.scrollHeight; } },700);
   setTimeout(()=>{
     tEl.remove();
-    const ttl = Math.random()<0.5 ? 'read' : ['30s','1m','keep','5m'][Math.floor(Math.random()*4)];
-    const r={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'peer',
-      text:ECHO[Math.floor(Math.random()*ECHO.length)],t:now(),ttl,readAt:(openCid===cid?now():null),expired:false};
-    c.msgs.push(r); save();
-    if(openCid===cid){
-      const el=renderMsg(r,true); th.appendChild(el); th.scrollTop=th.scrollHeight;
-      if(r.readAt&&r.ttl==='read') scheduleRead(cid,r);
-    }
-    if(typeof TTL.find(x=>x.k===r.ttl).ms==='number') scheduleTimed(cid,r);
+    const ttl=Math.random()<0.5?'read':['30s','1m','keep','5m'][Math.floor(Math.random()*4)];
+    const r={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'peer',text:ECHO[Math.floor(Math.random()*ECHO.length)],t:now(),ttl,readAt:(openCid===cid?now():null),expired:false};
+    c.msgs.push(r); saveLocal();
+    if(openCid===cid){ const el=renderMsg(r,true); th.appendChild(el); th.scrollTop=th.scrollHeight; if(r.readAt&&r.ttl==='read') scheduleRead(cid,r); }
+    if(typeof ttlMs(ttl)==='number') scheduleTimed(cid,r);
     renderList();
   },1700+Math.random()*700);
 }
-
-/* ---- expiry scheduling ---- */
-function scheduleTimed(cid,m){
-  const rule=TTL.find(r=>r.k===m.ttl); if(typeof rule.ms!=='number') return;
-  const left=m.t+rule.ms-now();
-  setTimeout(()=>expire(cid,m), Math.max(0,left));
-}
-function scheduleRead(cid,m){ setTimeout(()=>expire(cid,m), 1500); } // grace beat after read
-function expire(cid,m){
-  if(m.expired) return; m.expired=true; save();
+function scheduleTimed(cid,m){ const ms=ttlMs(m.ttl); if(typeof ms!=='number') return; setTimeout(()=>expireLocal(cid,m),Math.max(0,m.t+ms-now())); }
+function scheduleRead(cid,m){ setTimeout(()=>expireLocal(cid,m),1500); }
+function expireLocal(cid,m){
+  if(m.expired) return; m.expired=true; saveLocal();
   const el = openCid===cid ? $(`.msg[data-id="${m.id}"]`,$('#thread')) : null;
-  if(el) dissolveEl(el,()=>{ el.remove(); renderList(); });
-  else renderList();
+  if(el) dissolveEl(el,()=>{ el.remove(); renderList(); }); else renderList();
 }
 
-/* ---- reaper: live countdown + catch expiries on load ---- */
+/* ======================================================================
+   reaper — live countdown + catch expiries
+   ====================================================================== */
+let reaperTimer=null;
 function startReaper(){
-  // expire anything already past due (e.g. after reload)
-  for(const cid in state.chats){
-    state.chats[cid].msgs.forEach(m=>{
-      if(m.expired) return;
-      const rule=TTL.find(r=>r.k===m.ttl);
-      if(rule&&typeof rule.ms==='number'){
-        if(m.t+rule.ms<=now()) m.expired=true; else scheduleTimed(cid,m);
-      } else if(m.ttl==='read'&&m.readAt){ m.expired=true; }
-    });
+  if(MODE==='local'){
+    for(const cid in state.chats){ state.chats[cid].msgs.forEach(m=>{
+      if(m.expired) return; const ms=ttlMs(m.ttl);
+      if(typeof ms==='number'){ if(m.t+ms<=now()) m.expired=true; else scheduleTimed(cid,m); }
+      else if(m.ttl==='read'&&m.readAt){ m.expired=true; } }); }
+    saveLocal();
   }
-  save();
   clearInterval(reaperTimer);
   reaperTimer=setInterval(()=>{
     if(activeScreen!=='chat'||!openCid) return;
+    const c=state.chats[openCid]; if(!c) return;
     $$('.msg',$('#thread')).forEach(el=>{
-      const m=state.chats[openCid].msgs.find(x=>x.id===el.dataset.id); if(!m) return;
-      const cd=$('[data-cdval]',el); if(cd){ const t=countdownText(m); if(t) cd.textContent=t; }
+      const m=c.msgs.find(x=>x.id===el.dataset.id); if(!m) return;
+      const cd=el.querySelector('[data-cdval]'); if(cd){ const t=countdownText(m); if(t) cd.textContent=t; }
     });
   },1000);
 }
 
-/* ---- the signature: particle dissolve ---- */
+/* ======================================================================
+   dissolve particle FX (signature)
+   ====================================================================== */
 const fx=$('#fxCanvas'), fxc=fx.getContext('2d'); let fxP=[], fxOn=false;
 function sizeFx(){ fx.width=innerWidth; fx.height=innerHeight; } sizeFx(); addEventListener('resize',sizeFx);
 const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
 function dissolveEl(el,done){
   el.classList.add('dissolving');
   if(reduce){ el.style.transition='opacity .4s'; el.style.opacity='0'; setTimeout(done,420); return; }
-  const b=el.querySelector('.bubble').getBoundingClientRect();
-  const emerald=el.classList.contains('out');
+  const bb=el.querySelector('.bubble'); if(!bb){ done(); return; }
+  const b=bb.getBoundingClientRect(); const emerald=el.classList.contains('out');
   el.style.transition='opacity .25s'; el.style.opacity='0';
-  const count=Math.min(140, Math.floor(b.width*b.height/55));
-  for(let i=0;i<count;i++){
-    fxP.push({
-      x:b.left+Math.random()*b.width, y:b.top+Math.random()*b.height,
-      vx:(Math.random()-0.5)*1.1, vy:-0.4-Math.random()*1.6,
-      life:1, decay:0.01+Math.random()*0.018, sz:1+Math.random()*2,
-      em: emerald || Math.random()<0.5
-    });
-  }
+  const count=Math.min(140,Math.floor(b.width*b.height/55));
+  for(let i=0;i<count;i++){ fxP.push({x:b.left+Math.random()*b.width,y:b.top+Math.random()*b.height,vx:(Math.random()-0.5)*1.1,vy:-0.4-Math.random()*1.6,life:1,decay:0.01+Math.random()*0.018,sz:1+Math.random()*2,em:emerald||Math.random()<0.5}); }
   if(!fxOn){ fxOn=true; requestAnimationFrame(fxLoop); }
   setTimeout(done,520);
 }
 function fxLoop(){
-  fxc.clearRect(0,0,fx.width,fx.height);
-  fxP=fxP.filter(p=>p.life>0);
-  for(const p of fxP){
-    p.x+=p.vx; p.y+=p.vy; p.vy+=0.012; p.vx*=0.99; p.life-=p.decay;
-    fxc.fillStyle = p.em ? `rgba(47,231,168,${p.life})` : `rgba(238,242,240,${p.life*0.85})`;
-    fxc.fillRect(p.x,p.y,p.sz,p.sz);
-  }
+  fxc.clearRect(0,0,fx.width,fx.height); fxP=fxP.filter(p=>p.life>0);
+  for(const p of fxP){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.012; p.vx*=0.99; p.life-=p.decay;
+    fxc.fillStyle=p.em?`rgba(47,231,168,${p.life})`:`rgba(238,242,240,${p.life*0.85})`; fxc.fillRect(p.x,p.y,p.sz,p.sz); }
   if(fxP.length) requestAnimationFrame(fxLoop); else fxOn=false;
 }
 
-/* ---- clear chat ---- */
+/* clear chat */
 $('#clearChat').addEventListener('click',()=>{
-  if(!openCid) return;
+  if(!openCid) return; const c=state.chats[openCid];
   const els=$$('.msg',$('#thread'));
-  state.chats[openCid].msgs.forEach(m=>m.expired=true); save();
-  let i=0; els.forEach(el=>setTimeout(()=>dissolveEl(el,()=>el.remove()), i++*40));
+  if(MODE==='cloud' && c.peer.uid){ c.msgs.forEach(m=>deleteCloud(c.peer.uid,m.id)); }
+  else { c.msgs.forEach(m=>m.expired=true); saveLocal(); }
+  let i=0; els.forEach(el=>setTimeout(()=>dissolveEl(el,()=>el.remove()),i++*40));
   toast('会話を消去しました'); renderList();
 });
 
 /* ======================================================================
-   demo seed + helpers
+   demo seed (local mode) + deep link
    ====================================================================== */
 function seedDemo(){
-  if(state.order.length) return;
+  if(state.order && state.order.length) return;
   const id='ghost_echo01';
   state.chats[id]={peer:{id,name:'Ghost',online:true},msgs:[
     {id:'s1',from:'peer',text:'Ghostsへようこそ 👻',t:now()-60000,ttl:'keep',readAt:now(),expired:false},
@@ -802,29 +925,20 @@ function seedDemo(){
     {id:'s3',from:'peer',text:'例えばこれは10秒で消える…',t:now()-2000,ttl:'10s',readAt:now(),expired:false},
   ]};
   state.order=[id];
-  scheduleTimed(id, state.chats[id].msgs[2]);
 }
-function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function fmtTime(t){ const d=new Date(t),h=d.getHours(),m=String(d.getMinutes()).padStart(2,'0'); return `${h}:${m}`; }
 let toastT;
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1900); }
 
-/* ?add= deep link → prefill search */
-const params=new URLSearchParams(location.search);
-const addParam=params.get('add');
-
-/* boot: if already registered, splash still shows; ENTER routes in */
-if(addParam){ /* will be handled after entering app */ }
-
-/* When entering app via list, honor pending add link */
+const addParam=new URLSearchParams(location.search).get('add');
 const _enter=enterApp;
 enterApp=function(){ _enter();
-  if(addParam && addParam.startsWith('ghost_') && addParam!==state.me.id){
-    setTimeout(()=>{ openAdd(); $$('.tab').forEach(x=>x.classList.remove('on'));
-      $('[data-tab="search"]').classList.add('on'); $$('.tabpane').forEach(p=>p.classList.remove('on'));
-      $('#pane-search').classList.add('on'); $('#searchId').value=addParam; doSearch(); },400);
+  if(addParam && addParam.startsWith('ghost_') && me && addParam!==me.id){
+    setTimeout(()=>{ openAdd(); $$('.tab').forEach(x=>x.classList.remove('on')); $('[data-tab="search"]').classList.add('on');
+      $$('.tabpane').forEach(p=>p.classList.remove('on')); $('#pane-search').classList.add('on');
+      $('#searchId').value=addParam; doSearch(); },400);
   }
 };
+
 </script>
 </body>
 </html>
