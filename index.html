@@ -176,6 +176,10 @@
   .pick-row{display:flex;align-items:center;gap:12px;padding:11px 4px;cursor:pointer;border-bottom:1px solid var(--line)}
   .pick-row .pn{flex:1;font:500 15px "Inter";color:var(--ghost)}
   .pick-row input[type=checkbox]{width:22px;height:22px;accent-color:var(--spectral)}
+  .av .avimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
+  .av.lg{width:84px;height:84px;font-size:30px;flex:none}
+  .av-edit{display:flex;flex-direction:column;align-items:center;gap:14px;padding:6px 0 4px}
+  .av-edit-actions{display:flex;gap:10px}
 
   /* ================= CHAT LIST ================= */
   .list{flex:1;overflow-y:auto;padding:6px 0}
@@ -382,6 +386,14 @@
       <h1>Settings</h1>
     </div>
     <div class="pad">
+      <div class="av-edit">
+        <div class="av lg" id="setAv" style="cursor:pointer">G</div>
+        <div class="av-edit-actions">
+          <button class="btn btn-ghost mini" id="setAvPhoto" type="button">写真を選ぶ</button>
+          <button class="btn btn-ghost mini" id="setAvRemove" type="button" style="display:none;color:var(--danger);border-color:rgba(255,107,107,.3)">削除</button>
+        </div>
+        <input type="file" id="avFile" accept="image/*" style="display:none" />
+      </div>
       <label class="flabel">ニックネーム</label>
       <div class="field">
         <input class="input" id="setNick" maxlength="20" />
@@ -564,6 +576,19 @@ function saveLocal(){ try{ if(MODE==='local') localStorage.setItem(LS, JSON.stri
 function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let i=0;i<6;i++) s+=c[Math.floor(Math.random()*c.length)]; return 'ghost_'+s; }
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
+function fileToAvatar(file){
+  return new Promise((res,rej)=>{
+    if(!file||!file.type.startsWith('image/')){ rej(); return; }
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{ const S=160, cv=document.createElement('canvas'); cv.width=S; cv.height=S;
+      const cx=cv.getContext('2d'); const s=Math.min(img.width,img.height);
+      cx.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,S,S);
+      URL.revokeObjectURL(url); res(cv.toDataURL('image/jpeg',0.82)); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(); };
+    img.src=url;
+  });
+}
 function fmtTime(t){ const d=new Date(t); return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0'); }
 
 /* ---------- router ---------- */
@@ -615,7 +640,7 @@ async function boot(){
     uid=auth.currentUser.uid;
     const snap=await getDoc(doc(db,'users',uid)); // throws if Firestore unreachable
     MODE='cloud'; setStatus('cloud');
-    if(snap.exists()) me={uid, id:snap.data().ghostId, nick:snap.data().nickname||snap.data().ghostId};
+    if(snap.exists()) me={uid, id:snap.data().ghostId, nick:snap.data().nickname||snap.data().ghostId, avatar:snap.data().avatar||''};
     return;
   }catch(e){
     MODE='local';
@@ -700,7 +725,7 @@ async function doLogin(){
     const uc=await signInWithEmailAndPassword(auth, emailFor(id), pass);
     uid=uc.user.uid;
     const snap=await getDoc(doc(db,'users',uid));
-    me={uid, id, nick:(snap.exists()&&snap.data().nickname)||id};
+    me={uid, id, nick:(snap.exists()&&snap.data().nickname)||id, avatar:(snap.exists()&&snap.data().avatar)||''};
     myInviteUrl=''; if(me) me.invite=null;
     enterApp(); go('list');
   }catch(e){
@@ -714,7 +739,7 @@ async function doLogin(){
    APP ENTRY
    ====================================================================== */
 function enterApp(){
-  $('#myAv').firstChild.textContent=initial(me.nick||me.id);
+  $('#myAv').innerHTML=avInner(me.nick||me.id, me.avatar)+'<span class="dot on"></span>';
   startReaper();
   if(MODE==='cloud'){ subscribeContacts(); subscribeGroups(); } else renderList();
 }
@@ -740,9 +765,9 @@ function renderList(){
     else if(last) prev = last.expired?'<div class="prev gone">メッセージは消えました</div>':`<div class="prev">${last.from==='me'?'あなた: ':''}${esc(last.text)}</div>`;
     const t = c.lastTs || (last&&last.t);
     const row=document.createElement('div'); row.className='chat-row';
-    const avInner = c.isGroup ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#07080b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>' : initial(c.peer.name||c.peer.id);
+    const avInnerHtml = c.isGroup ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#07080b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>' : avInner(c.peer.name||c.peer.id, c.peer.avatar);
     const sub = c.isGroup ? `<span class="gcount">${(c.members||[]).length}</span>` : `<span class="dot ${c.peer.online?'on':''}"></span>`;
-    row.innerHTML=`<div class="av sm${c.isGroup?' grp':''}">${avInner}${sub}</div>
+    row.innerHTML=`<div class="av sm${c.isGroup?' grp':''}">${avInnerHtml}${sub}</div>
       <div class="meta"><div class="nm"><b>${esc(c.peer.name||c.peer.id)}</b><time>${t?fmtTime(t):''}</time></div>${prev}</div>`;
     row.addEventListener('click',()=>openChat(cid));
     wrap.appendChild(row);
@@ -759,7 +784,7 @@ function subscribeContacts(){
         const cid=ch.doc.id, d=ch.doc.data();
         if(ch.type==='removed'){ delete state.chats[cid]; state.order=state.order.filter(x=>x!==cid); return; }
         const existing=state.chats[cid];
-        state.chats[cid]={peer:{id:d.ghostId,name:d.nickname||d.ghostId,uid:cid,online:true},
+        state.chats[cid]={peer:{id:d.ghostId,name:d.nickname||d.ghostId,avatar:d.avatar||'',uid:cid,online:true},
           conv:[uid,cid].sort().join('__'), isGroup:false,
           msgs:existing?existing.msgs:[], lastText:d.lastText, lastTs:d.lastTs};
         if(!state.order.includes(cid)) state.order.unshift(cid);
@@ -807,7 +832,7 @@ async function ensureInvite(){
       }
       if(!token){
         token=genToken();
-        await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, active:true, createdAt:serverTimestamp()});
+        await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, avatar:me.avatar||'', active:true, createdAt:serverTimestamp()});
         await setDoc(doc(db,'users',uid),{inviteToken:token},{merge:true});
       }
       me.invite=token;
@@ -823,7 +848,7 @@ async function regenInvite(){            // revoke old, issue new
   try{
     if(me.invite) await setDoc(doc(db,'invites',me.invite),{active:false},{merge:true});
     const token=genToken();
-    await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, active:true, createdAt:serverTimestamp()});
+    await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, avatar:me.avatar||'', active:true, createdAt:serverTimestamp()});
     await setDoc(doc(db,'users',uid),{inviteToken:token},{merge:true});
     me.invite=token; myInviteUrl=SITE+'?invite='+token; qrDrawn=false; $('#qrCard').innerHTML='';
     $('#inviteLink').value=myInviteUrl; renderQR();
@@ -837,6 +862,8 @@ $('#toAdd').addEventListener('click',openAdd);
 function openSettings(){
   $('#setNick').value=me.nick||'';
   $('#setId').textContent=me.id;
+  $('#setAv').innerHTML=avInner(me.nick||me.id, me.avatar);
+  $('#setAvRemove').style.display = me.avatar ? 'inline-flex' : 'none';
   go('settings');
 }
 const toSet=$('#toSettings'); if(toSet) toSet.addEventListener('click',openSettings);
@@ -846,7 +873,7 @@ const saveNickBtn=$('#saveNick');
 if(saveNickBtn) saveNickBtn.addEventListener('click', async ()=>{
   const nick=$('#setNick').value.trim(); if(!nick){ toast('ニックネームを入力してください'); return; }
   me.nick=nick;
-  $('#myAv').firstChild.textContent=initial(nick);
+  $('#myAv').innerHTML=avInner(me.nick||me.id, me.avatar)+'<span class="dot on"></span>';
   if(MODE==='cloud'){
     try{
       await setDoc(doc(db,'users',uid),{nickname:nick},{merge:true});
@@ -864,6 +891,37 @@ if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{
   try{ localStorage.removeItem(LS); }catch(e){}
   location.reload();
 });
+
+/* ---- avatar (profile photo) ---- */
+const avFile=$('#avFile');
+const setAvPhoto=$('#setAvPhoto'); if(setAvPhoto) setAvPhoto.addEventListener('click',()=>avFile&&avFile.click());
+const setAvDisp=$('#setAv'); if(setAvDisp) setAvDisp.addEventListener('click',()=>avFile&&avFile.click());
+if(avFile) avFile.addEventListener('change', async ()=>{
+  const f=avFile.files&&avFile.files[0]; avFile.value='';
+  if(!f) return;
+  try{ const dataUrl=await fileToAvatar(f); await setAvatar(dataUrl); }
+  catch(e){ toast('画像を読み込めませんでした'); }
+});
+const setAvRemoveBtn=$('#setAvRemove'); if(setAvRemoveBtn) setAvRemoveBtn.addEventListener('click',()=>setAvatar(''));
+
+async function setAvatar(dataUrl){
+  me.avatar=dataUrl||'';
+  // update my own UI everywhere
+  $('#setAv').innerHTML=avInner(me.nick||me.id, me.avatar);
+  $('#setAvRemove').style.display = me.avatar ? 'inline-flex' : 'none';
+  $('#myAv').innerHTML=avInner(me.nick||me.id, me.avatar)+'<span class="dot on"></span>';
+  if(MODE==='cloud'){
+    try{
+      await setDoc(doc(db,'users',uid),{avatar:me.avatar},{merge:true});
+      if(me.invite) setDoc(doc(db,'invites',me.invite),{avatar:me.avatar},{merge:true}).catch(()=>{});
+      // propagate to how existing contacts see me
+      state.order.forEach(pid=>{ const p=state.chats[pid];
+        if(p&&!p.isGroup&&p.peer&&p.peer.uid)
+          setDoc(doc(db,'users',p.peer.uid,'contacts',uid),{avatar:me.avatar},{merge:true}).catch(()=>{}); });
+    }catch(e){ toast('保存に失敗しました'); return; }
+  } else { state.me=me; saveLocal(); }
+  toast(dataUrl?'アイコンを変更しました':'アイコンを削除しました');
+}
 
 /* ======================================================================
    GROUPS
@@ -916,10 +974,11 @@ function openGroupInfo(c){
   (c.members||[]).forEach(mUid=>{
     const meTag = mUid===uid ? '（自分）' : (mUid===c.owner?'（作成者）':'');
     let label = mUid===uid ? (me.nick||me.id) : mUid;
-    // try to resolve name from my dm contacts
-    const dm=state.chats[mUid]; if(dm&&dm.peer) label=dm.peer.name||label;
+    let avA = mUid===uid ? me.avatar : '';
+    // try to resolve name/photo from my dm contacts
+    const dm=state.chats[mUid]; if(dm&&dm.peer){ label=dm.peer.name||label; avA=dm.peer.avatar||avA; }
     const row=document.createElement('div'); row.className='set-row';
-    row.innerHTML=`<div class="av sm">${initial(label)}</div><div class="v" style="flex:1">${esc(label)} <span style="color:var(--fade);font-size:12px">${meTag}</span></div>`;
+    row.innerHTML=`<div class="av sm">${avInner(label, avA)}</div><div class="v" style="flex:1">${esc(label)} <span style="color:var(--fade);font-size:12px">${meTag}</span></div>`;
     ml.appendChild(row);
   });
   // add-member candidates = my dm contacts not already in group
@@ -993,25 +1052,25 @@ async function acceptInvite(token){
     if(!snap.exists()||snap.data().active===false){ toast('無効な招待リンクです'); return; }
     const d=snap.data();
     if(d.from===uid){ toast('自分の招待リンクです'); return; }
-    showConnect(d.ghostId, d.nickname||d.ghostId, d.from);
+    showConnect(d.ghostId, d.nickname||d.ghostId, d.from, d.avatar||'');
   }catch(e){ toast('招待の確認に失敗しました'); }
 }
 async function acceptLegacy(ghostId){     // local demo only
   showConnect(ghostId, ghostId, null);
 }
-function showConnect(ghostId,nick,peerUid){
-  $('#resAv').textContent=initial(nick);
+function showConnect(ghostId,nick,peerUid,avatar){
+  $('#resAv').innerHTML=avInner(nick, avatar);
   $('#resName').textContent=nick; $('#resId').textContent=ghostId;
   $('#searchResult').classList.add('show');
   $('#addBtn').textContent='接続';
-  $('#addBtn').onclick=()=>{ connectWith(ghostId,nick,peerUid); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
+  $('#addBtn').onclick=()=>{ connectWith(ghostId,nick,peerUid,avatar); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
 }
-async function connectWith(ghostId,nick,peerUid){
+async function connectWith(ghostId,nick,peerUid,avatar){
   if(MODE==='cloud' && peerUid){
     try{
       await setDoc(doc(db,'connections',convId(peerUid)),{members:[uid,peerUid].sort(),createdAt:serverTimestamp()},{merge:true});
-      await setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId, nickname:nick||ghostId, addedAt:serverTimestamp()},{merge:true});
-      await setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, nickname:me.nick||me.id, addedAt:serverTimestamp()},{merge:true});
+      await setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId, nickname:nick||ghostId, avatar:avatar||'', addedAt:serverTimestamp()},{merge:true});
+      await setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, nickname:me.nick||me.id, avatar:me.avatar||'', addedAt:serverTimestamp()},{merge:true});
     }catch(e){ toast('接続に失敗しました'); return; }
     toast((nick||ghostId)+' と接続しました'); openChat(peerUid);
   } else {
@@ -1047,8 +1106,8 @@ function openChat(cid){
   teardownChat(); openCid=cid;
   const c=state.chats[cid]; if(!c) return;
   const av=$('#peerAv');
-  if(c.isGroup){ av.classList.add('grp'); av.firstChild.textContent='👥'; }
-  else { av.classList.remove('grp'); av.firstChild.textContent=initial(c.peer.name||c.peer.id); }
+  if(c.isGroup){ av.classList.add('grp'); av.innerHTML='👥<span class="dot"></span>'; }
+  else { av.classList.remove('grp'); av.innerHTML=avInner(c.peer.name||c.peer.id, c.peer.avatar)+'<span class="dot"></span>'; }
   const dot=av.querySelector('.dot'); if(dot) dot.classList.toggle('on',!!c.peer.online);
   $('#peerName').textContent=c.peer.name||c.peer.id;
   const st=$('#peerStatus');
