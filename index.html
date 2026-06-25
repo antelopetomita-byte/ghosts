@@ -210,6 +210,22 @@
   .lightbox{position:fixed;inset:0;z-index:80;background:rgba(3,4,6,.94);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s ease;padding:20px}
   .lightbox.show{opacity:1;pointer-events:auto}
   .lightbox img{max-width:100%;max-height:100%;border-radius:10px}
+  .call-screen{position:fixed;inset:0;z-index:90;background:linear-gradient(180deg,#0b0f14,#07080b);display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:14vh 24px calc(8vh + env(safe-area-inset-bottom,0));opacity:0;pointer-events:none;transition:opacity .25s ease}
+  .call-screen.show{opacity:1;pointer-events:auto}
+  .call-top{display:flex;flex-direction:column;align-items:center;text-align:center}
+  .call-screen .av.lg{width:108px;height:108px;font-size:40px;box-shadow:0 0 50px rgba(47,231,168,.25)}
+  .call-name{font:600 26px/1.2 "Space Grotesk";color:var(--ghost);margin-top:24px}
+  .call-status{font:400 14px/1 "Space Mono";letter-spacing:.18em;color:var(--spectral);margin-top:12px;text-transform:uppercase}
+  .call-timer{font:400 15px/1 "Space Mono";color:var(--fade);margin-top:10px}
+  .call-incoming-row,.call-active-row{display:flex;gap:54px;align-items:center}
+  .call-btn{width:70px;height:70px;border-radius:50%;border:none;display:grid;place-items:center;cursor:pointer;color:#fff}
+  .call-btn svg{width:30px;height:30px}
+  .call-btn.accept{background:#2fe7a8;color:#04130d}
+  .call-btn.decline,.call-btn.hangup{background:#ff5a5a}
+  .call-btn.decline svg{transform:rotate(135deg)}
+  .call-btn.mute{background:var(--mist);color:var(--ghost)}
+  .call-btn.mute.on{background:var(--spectral);color:#04130d}
+  .call-btn:active{transform:scale(.94)}
   .msglink{color:var(--spectral);text-decoration:underline;text-underline-offset:2px;word-break:break-all}
   .daysep.day{margin:18px auto 12px;font:600 11px/1 "Space Mono";letter-spacing:.12em;color:var(--fade-2);background:var(--void-2);border:1px solid var(--line);padding:5px 12px;border-radius:999px;width:fit-content}
   .msgimg{opacity:0;transition:opacity .34s ease}
@@ -548,6 +564,9 @@
       </button>
       <div class="av sm" id="peerAv">G<span class="dot"></span></div>
       <div class="meta" id="chatHeadMeta"><b id="peerName">Ghost</b><span id="peerStatus">online</span></div>
+      <button class="iconbtn" id="callBtn" type="button" aria-label="音声通話" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      </button>
       <button class="iconbtn" id="clearChat" type="button" aria-label="会話を消去">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
       </button>
@@ -572,6 +591,31 @@
 <div class="toast" id="toast"></div>
 
 <div class="lightbox" id="lightbox"><img id="lightboxImg" src="" alt="" /></div>
+
+<div class="call-screen" id="callScreen">
+  <div class="call-top">
+    <div class="av lg" id="callAv">G</div>
+    <div class="call-name" id="callName">通話</div>
+    <div class="call-status" id="callStatus">呼び出し中…</div>
+    <div class="call-timer" id="callTimer"></div>
+  </div>
+  <div class="call-incoming-row" id="callIncomingRow" style="display:none">
+    <button class="call-btn decline" id="callDecline" type="button" aria-label="拒否">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+    </button>
+    <button class="call-btn accept" id="callAccept" type="button" aria-label="応答">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+    </button>
+  </div>
+  <div class="call-active-row" id="callActiveRow" style="display:none">
+    <button class="call-btn mute" id="callMute" type="button" aria-label="ミュート">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4"/></svg>
+    </button>
+    <button class="call-btn hangup" id="callHangup" type="button" aria-label="終了">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a1 1 0 0 1-1.41-.04L.29 13.08a1 1 0 0 1 .04-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.67 4.67a1 1 0 0 1 .04 1.41l-2.78 3.34a1 1 0 0 1-1.41.04 12.04 12.04 0 0 0-2.66-1.85.998.998 0 0 1-.56-.9v-3.1A15.7 15.7 0 0 0 12 9z"/></svg>
+    </button>
+  </div>
+</div>
 
 <div class="msg-sheet" id="msgMenu">
   <div class="msg-sheet-card">
@@ -654,7 +698,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24f';
+const BUILD='2026.06.24g';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -713,6 +757,114 @@ async function notifyPeer(peerUid){
     fetch(NOTIFY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub,title:'Ghosts',body:'新しいメッセージ'})}).catch(()=>{});
   }catch(e){}
 }
+
+/* ====================== 1:1 VOICE CALL (WebRTC) ====================== */
+const RTC_CONFIG={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
+let call=null, connWatchUnsub=null;
+function callRef(conv){ return doc(db,'connections',conv); }
+function watchConnections(){
+  if(MODE!=='cloud') return;
+  try{
+    connWatchUnsub=onSnapshot(query(collection(db,'connections'),where('members','array-contains',uid)),snap=>{
+      snap.docChanges().forEach(ch=>handleCallSignal(ch.doc.id, ch.doc.data()));
+    },()=>{});
+  }catch(e){}
+}
+function handleCallSignal(conv, d){
+  const cd=d.call; if(!cd) return;
+  if(cd.status==='ringing' && cd.from!==uid && !call){ incomingCall(conv, cd); return; }
+  if(call && call.conv===conv){
+    if(call.role==='caller'){
+      if(cd.answer && !call.answered){ call.answered=true; try{ call.pc.setRemoteDescription(JSON.parse(cd.answer)); }catch(e){} }
+      applyCandidates(d.callCandB||[]);
+    } else if(call.role==='callee'){
+      applyCandidates(d.callCandA||[]);
+    }
+    if(cd.status==='declined' && call.role==='caller'){ endCall('応答がありませんでした'); }
+    else if(cd.status==='ended'){ endCall(); }
+  }
+}
+function applyCandidates(arr){
+  if(!call||!call.pc) return;
+  for(let i=call.added||0;i<arr.length;i++){ try{ call.pc.addIceCandidate(JSON.parse(arr[i])); }catch(e){} }
+  call.added=arr.length;
+}
+function setupPc(pc, myCandField){
+  pc.onicecandidate=(e)=>{ if(e.candidate&&call){ updateDoc(callRef(call.conv),{[myCandField]:arrayUnion(JSON.stringify(e.candidate))}).catch(()=>{}); } };
+  pc.ontrack=(e)=>{ playRemote(e.streams[0]); };
+  pc.onconnectionstatechange=()=>{ if(!call)return; const st=pc.connectionState;
+    if(st==='connected'){ if(call.status!=='active'){ call.status='active'; callUI('active'); startCallTimer(); } }
+    else if(st==='failed'){ endCall('接続できませんでした'); } };
+}
+function playRemote(stream){
+  let a=document.getElementById('remoteAudio');
+  if(!a){ a=document.createElement('audio'); a.id='remoteAudio'; a.autoplay=true; a.setAttribute('playsinline',''); document.body.appendChild(a); }
+  try{ a.srcObject=stream; const p=a.play&&a.play(); if(p&&p.catch) p.catch(()=>{}); }catch(e){}
+}
+async function startCall(c){
+  if(call){ toast('通話中です'); return; }
+  if(!c||c.isGroup||!c.peer.uid){ toast('この相手とは通話できません'); return; }
+  if(MODE!=='cloud'){ toast('オンライン接続が必要です'); return; }
+  let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ toast('マイクを使用できません'); return; }
+  const pc=new RTCPeerConnection(RTC_CONFIG);
+  call={conv:c.conv, peerUid:c.peer.uid, role:'caller', pc, localStream:stream, status:'ringing', added:0, answered:false, name:c.peer.name||c.peer.id, avatar:c.peer.avatar, timer:null, startTs:0};
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  setupPc(pc,'callCandA');
+  callUI('calling');
+  try{
+    const offer=await pc.createOffer(); await pc.setLocalDescription(offer);
+    await setDoc(callRef(c.conv),{call:{from:uid,status:'ringing',offer:JSON.stringify(offer),ts:now()},callCandA:[],callCandB:[]},{merge:true});
+  }catch(e){ endCall('発信に失敗しました'); }
+}
+function incomingCall(conv, cd){
+  call={conv, peerUid:cd.from, role:'callee', pc:null, localStream:null, status:'incoming', offer:cd.offer, added:0, name:cd.from, avatar:'', timer:null, startTs:0};
+  const c=state.chats[cd.from]; if(c&&c.peer){ call.name=c.peer.name||cd.from; call.avatar=c.peer.avatar||''; }
+  callUI('incoming');
+}
+async function acceptCall(){
+  if(!call||call.role!=='callee') return;
+  let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ toast('マイクを使用できません'); declineCall(); return; }
+  const pc=new RTCPeerConnection(RTC_CONFIG); call.pc=pc; call.localStream=stream;
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  setupPc(pc,'callCandB');
+  try{
+    await pc.setRemoteDescription(JSON.parse(call.offer));
+    const ans=await pc.createAnswer(); await pc.setLocalDescription(ans);
+    await updateDoc(callRef(call.conv),{'call.answer':JSON.stringify(ans),'call.status':'active'});
+    call.status='active'; callUI('active'); startCallTimer();
+  }catch(e){ endCall('通話の確立に失敗しました'); }
+}
+function declineCall(){ if(!call) return; updateDoc(callRef(call.conv),{'call.status':'declined'}).catch(()=>{}); cleanupCall(); }
+function hangup(){ if(!call) return; updateDoc(callRef(call.conv),{'call.status':'ended'}).catch(()=>{}); cleanupCall(); }
+function endCall(msg){ if(msg) toast(msg); cleanupCall(); }
+function cleanupCall(){
+  if(!call) return;
+  try{ if(call.pc) call.pc.close(); }catch(e){}
+  try{ if(call.localStream) call.localStream.getTracks().forEach(t=>t.stop()); }catch(e){}
+  const a=document.getElementById('remoteAudio'); if(a) try{ a.srcObject=null; }catch(e){}
+  if(call.timer) clearInterval(call.timer);
+  call=null; hideCallUI();
+}
+function startCallTimer(){
+  if(!call) return; call.startTs=now();
+  if(call.timer) clearInterval(call.timer);
+  call.timer=setInterval(()=>{ if(!call) return; const s=Math.floor((now()-call.startTs)/1000); const el=$('#callTimer'); if(el) el.textContent=(Math.floor(s/60))+':'+String(s%60).padStart(2,'0'); },500);
+}
+function toggleMute(){ if(!call||!call.localStream) return; const t=call.localStream.getAudioTracks()[0]; if(t){ t.enabled=!t.enabled; const b=$('#callMute'); if(b) b.classList.toggle('on',!t.enabled); } }
+function callUI(mode){
+  const s=$('#callScreen'); if(!s||!call) return;
+  $('#callName').textContent=call.name||'通話';
+  $('#callAv').innerHTML=avInner(call.name, call.avatar);
+  const status=$('#callStatus'), inRow=$('#callIncomingRow'), actRow=$('#callActiveRow'), timer=$('#callTimer');
+  if(timer) timer.textContent='';
+  if(mode==='calling'){ status.textContent='呼び出し中…'; inRow.style.display='none'; actRow.style.display='flex'; }
+  else if(mode==='incoming'){ status.textContent='着信'; inRow.style.display='flex'; actRow.style.display='none'; }
+  else if(mode==='active'){ status.textContent='通話中'; inRow.style.display='none'; actRow.style.display='flex'; }
+  s.classList.add('show');
+}
+function hideCallUI(){ const s=$('#callScreen'); if(s) s.classList.remove('show'); const b=$('#callMute'); if(b) b.classList.remove('on'); }
 
 /* ---- E2EE (DM text, ECDH P-256 + AES-GCM) ---- */
 const _te=new TextEncoder(), _tdc=new TextDecoder();
@@ -931,7 +1083,7 @@ async function doLogin(){
 async function enterApp(){
   $('#myAv').innerHTML=avInner(me.nick||me.id, me.avatar)+'<span class="dot on"></span>';
   startReaper();
-  if(MODE==='cloud'){ await ensureKeys(); subscribeContacts(); subscribeGroups(); backfillKeys(); } else renderList();
+  if(MODE==='cloud'){ await ensureKeys(); subscribeContacts(); subscribeGroups(); backfillKeys(); watchConnections(); } else renderList();
 }
 
 /* ======================================================================
@@ -1108,6 +1260,11 @@ if(avFile) avFile.addEventListener('change', async ()=>{
 });
 const setAvRemoveBtn=$('#setAvRemove'); if(setAvRemoveBtn) setAvRemoveBtn.addEventListener('click',()=>setAvatar(''));
 const notifBtn=$('#notifBtn'); if(notifBtn) notifBtn.addEventListener('click',enableNotif);
+const callBtn=$('#callBtn'); if(callBtn) callBtn.addEventListener('click',()=>{ const c=state.chats[openCid]; if(c) startCall(c); });
+const callAccept=$('#callAccept'); if(callAccept) callAccept.addEventListener('click',acceptCall);
+const callDecline=$('#callDecline'); if(callDecline) callDecline.addEventListener('click',declineCall);
+const callHangup=$('#callHangup'); if(callHangup) callHangup.addEventListener('click',hangup);
+const callMute=$('#callMute'); if(callMute) callMute.addEventListener('click',toggleMute);
 
 async function setAvatar(dataUrl){
   me.avatar=dataUrl||'';
@@ -1357,6 +1514,7 @@ async function openChat(cid){
   st.textContent = c.isGroup ? `${(c.members||[]).length}人のメンバー` : (MODE==='cloud' ? 'end-to-end' : (c.peer.online?'online':'last seen recently'));
   st.classList.toggle('off', !c.isGroup && MODE!=='cloud' && !c.peer.online);
   $('#chatHeadMeta').style.cursor = c.isGroup ? 'pointer' : 'default';
+  { const cb=$('#callBtn'); if(cb) cb.style.display = (!c.isGroup && MODE==='cloud' && c.peer.uid) ? 'grid' : 'none'; }
   buildTtlStrip(); go('chat');
 
   if(MODE==='cloud' && c.peer.uid){ clearUnread(c); if(!c.isGroup) await ensureChatKey(c); if(!c.isGroup && c.aesKey) $('#peerStatus').textContent='🔒 暗号化された会話'; subscribeMessages(c.conv, c); subscribeTyping(c); }
