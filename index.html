@@ -443,6 +443,12 @@
       <div class="set-row"><div class="k">Ghost ID</div><div class="v" id="setId">ghost_…</div></div>
       <div class="set-row"><div class="k">招待</div><div class="v"><a id="setInvite" style="color:var(--spectral);cursor:pointer">招待リンク / QR を開く</a></div></div>
       <p class="sub" style="margin-top:22px">同じIDを別の端末で使うには、起動画面で「ログイン」を選び、このGhost IDとパスワードでサインインしてください。新しいIDは作られません。</p>
+      <label class="flabel" style="margin-top:18px">通知</label>
+      <div class="set-row">
+        <div class="v" style="flex:1">アイコンに未読バッジを表示</div>
+        <button class="btn btn-ghost mini" id="notifBtn" type="button" style="width:auto">有効にする</button>
+      </div>
+      <p class="hint" id="notifHint">ホーム画面に追加したアプリで、未読数をアイコンに表示します（iOS 16.4+）。</p>
       <button class="btn btn-ghost" id="logoutBtn" type="button" style="margin-top:20px;color:var(--danger);border-color:rgba(255,107,107,.3)">ログアウト</button>
       <div class="build-label">GHOSTS · build <span id="buildVer">—</span></div>
     </div>
@@ -648,7 +654,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24c';
+const BUILD='2026.06.24d';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -658,6 +664,31 @@ function fmtDay(t){
   if(a===today) return '今日';
   if(a===ymd(y)) return '昨日';
   return (d.getMonth()+1)+'月'+d.getDate()+'日';
+}
+/* ---- app icon badge (Badging API) ---- */
+function totalUnread(){ let n=0; state.order.forEach(id=>{ const c=state.chats[id]; if(c) n+=(c.unread||0); }); return n; }
+function updateBadge(){
+  if(!('setAppBadge' in navigator)) return;
+  const n=totalUnread();
+  try{ if(n>0) navigator.setAppBadge(n); else navigator.clearAppBadge&&navigator.clearAppBadge(); }catch(e){}
+}
+async function enableNotif(){
+  if(typeof Notification==='undefined'){ toast('この環境では通知に対応していません'); return; }
+  try{
+    const p=await Notification.requestPermission();
+    if(p==='granted'){ toast('通知を有効にしました'); updateBadge(); }
+    else if(p==='denied'){ toast('通知がブロックされています（設定から許可してください）'); }
+    else { toast('通知は有効になりませんでした'); }
+  }catch(e){ toast('通知を有効にできませんでした'); }
+  updateNotifBtn();
+}
+function updateNotifBtn(){
+  const b=$('#notifBtn'), h=$('#notifHint'); if(!b) return;
+  if(!('setAppBadge' in navigator)){ b.textContent='非対応'; b.disabled=true; if(h) h.textContent='この環境ではアイコンバッジに対応していません。iOSはホーム画面に追加したアプリで利用できます。'; return; }
+  const perm = (typeof Notification!=='undefined') ? Notification.permission : 'default';
+  if(perm==='granted'){ b.textContent='有効'; b.disabled=true; if(h) h.textContent='未読数をアプリアイコンに表示します（アプリを開いた時に更新）。'; }
+  else if(perm==='denied'){ b.textContent='ブロック中'; b.disabled=true; if(h) h.textContent='通知がブロックされています。iOSの設定 → 通知 から許可してください。'; }
+  else { b.textContent='有効にする'; b.disabled=false; if(h) h.textContent='ホーム画面に追加したアプリで、未読数をアイコンに表示します（iOS 16.4+）。'; }
 }
 
 /* ---- E2EE (DM text, ECDH P-256 + AES-GCM) ---- */
@@ -889,6 +920,7 @@ function renderList(){
     wrap.innerHTML=`<div class="empty">
       <svg width="46" height="46" viewBox="0 0 32 32"><path fill="#454c57" d="M16 3c-6 0-10 4.6-10 11v13.2c0 1 0 1.8 1.1 1.3 1-.5 1.8-1.6 2.6-1.6.9 0 1.5 1.6 2.7 1.6 1.1 0 1.7-1.6 2.6-1.6.9 0 1.6 1.6 2.7 1.6 1.1 0 1.7-1.6 2.6-1.6.8 0 1.6 1.1 2.6 1.6 1.1.5 1.1-.3 1.1-1.3V14C26 7.6 22 3 16 3z"/></svg>
       <p>まだ会話はありません。<br>＋ から招待リンクを渡した相手と繋がります。</p></div>`;
+    updateBadge();
     return;
   }
   wrap.innerHTML='';
@@ -910,6 +942,7 @@ function renderList(){
     row.addEventListener('click',()=>openChat(cid));
     wrap.appendChild(row);
   });
+  updateBadge();
 }
 
 /* cloud: contacts collection (1:1) → list */
@@ -1003,6 +1036,7 @@ function openSettings(){
   $('#setAv').innerHTML=avInner(me.nick||me.id, me.avatar);
   $('#setAvRemove').style.display = me.avatar ? 'inline-flex' : 'none';
   const bv=$('#buildVer'); if(bv) bv.textContent=BUILD;
+  updateNotifBtn();
   go('settings');
 }
 const toSet=$('#toSettings'); if(toSet) toSet.addEventListener('click',openSettings);
@@ -1050,6 +1084,7 @@ if(avFile) avFile.addEventListener('change', async ()=>{
   catch(e){ toast('画像を読み込めませんでした'); }
 });
 const setAvRemoveBtn=$('#setAvRemove'); if(setAvRemoveBtn) setAvRemoveBtn.addEventListener('click',()=>setAvatar(''));
+const notifBtn=$('#notifBtn'); if(notifBtn) notifBtn.addEventListener('click',enableNotif);
 
 async function setAvatar(dataUrl){
   me.avatar=dataUrl||'';
