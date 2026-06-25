@@ -46,6 +46,12 @@ service cloud.firestore {
       allow delete: if signedIn() && uid() == resource.data.owner;
     }
 
+    // --- push subscriptions: owner writes; connected peers can read (for sending notifications) ---
+    match /pushSubs/{u} {
+      allow write: if signedIn() && u == uid();
+      allow read:  if signedIn() && ( u == uid() || connExists(u, uid()) );
+    }
+
     match /chats/{conv}/messages/{mid} {
       allow read, create, update, delete: if signedIn()
         && ( isConnMember(conv) || isGroupMember(conv) );
