@@ -313,11 +313,11 @@
   .ttl-chip.keep.on{background:transparent;border-color:var(--fade);color:var(--ghost)}
   .send-row{display:flex;gap:9px;align-items:flex-end}
   .msg-input{
-    flex:1;background:var(--mist);border:1px solid var(--line);border-radius:22px;
+    flex:1;background:transparent;border:1px solid rgba(255,255,255,.6);border-radius:22px;
     color:var(--ghost);font:400 15px/1.35 "Inter";padding:11px 16px;outline:none;resize:none;
     max-height:120px;min-height:44px;transition:border .2s;
   }
-  .msg-input:focus{border-color:var(--spectral-line)}
+  .msg-input:focus{border-color:rgba(255,255,255,.92)}
   .msg-input::placeholder{color:var(--fade-2)}
   .send{width:44px;height:44px;border-radius:50%;border:none;background:var(--spectral);color:#04130d;display:grid;place-items:center;cursor:pointer;flex:none;transition:.18s}
   .send:disabled{background:var(--mist);color:var(--fade-2);cursor:default}
