@@ -180,6 +180,16 @@
   .av.lg{width:84px;height:84px;font-size:30px;flex:none}
   .av-edit{display:flex;flex-direction:column;align-items:center;gap:14px;padding:6px 0 4px}
   .av-edit-actions{display:flex;gap:10px}
+  .msg .bubble{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  .msg-sheet{position:fixed;inset:0;z-index:60;background:rgba(4,5,7,.6);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .22s ease}
+  .msg-sheet.show{opacity:1;pointer-events:auto}
+  .msg-sheet-card{width:100%;max-width:520px;margin:12px;background:var(--void-2);border:1px solid var(--line);border-radius:22px;padding:10px;transform:translateY(16px);transition:transform .26s cubic-bezier(.22,1,.36,1);padding-bottom:calc(10px + env(safe-area-inset-bottom,0))}
+  .msg-sheet.show .msg-sheet-card{transform:none}
+  .msg-sheet-prev{font:400 13px/1.5 "Inter";color:var(--fade);padding:14px 16px 12px;border-bottom:1px solid var(--line);margin-bottom:8px;max-height:84px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+  .msg-sheet-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:9px;background:transparent;border:none;color:var(--ghost);font:600 16px "Space Grotesk";padding:16px;border-radius:14px;cursor:pointer}
+  .msg-sheet-btn svg{width:19px;height:19px}
+  .msg-sheet-btn:active{background:var(--mist)}
+  .msg-sheet-btn.danger{color:var(--danger)}
 
   /* ================= CHAT LIST ================= */
   .list{flex:1;overflow-y:auto;padding:6px 0}
@@ -518,6 +528,17 @@
 
 </div>
 <div class="toast" id="toast"></div>
+
+<div class="msg-sheet" id="msgMenu">
+  <div class="msg-sheet-card">
+    <div class="msg-sheet-prev" id="msgMenuText"></div>
+    <button class="msg-sheet-btn danger" id="msgDel" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+      全員から削除
+    </button>
+    <button class="msg-sheet-btn" id="msgCancel" type="button">キャンセル</button>
+  </div>
+</div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
@@ -892,6 +913,11 @@ if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{
   location.reload();
 });
 
+/* ---- message action sheet (long-press delete) ---- */
+const msgDelBtn=$('#msgDel'); if(msgDelBtn) msgDelBtn.addEventListener('click',deleteTargetMsg);
+const msgCancelBtn=$('#msgCancel'); if(msgCancelBtn) msgCancelBtn.addEventListener('click',closeMsgMenu);
+const msgMenuEl=$('#msgMenu'); if(msgMenuEl) msgMenuEl.addEventListener('click',e=>{ if(e.target===msgMenuEl) closeMsgMenu(); });
+
 /* ---- avatar (profile photo) ---- */
 const avFile=$('#avFile');
 const setAvPhoto=$('#setAvPhoto'); if(setAvPhoto) setAvPhoto.addEventListener('click',()=>avFile&&avFile.click());
@@ -1203,7 +1229,36 @@ function renderMsg(m,gap,c){
   }
   const sender = (c && c.isGroup && !out && gap && m.fromName) ? `<div class="sender">${esc(m.fromName)}</div>` : '';
   el.innerHTML=`${sender}<div class="bubble">${esc(m.text)}</div><div class="meta-line">${ttlTag}${metaR}</div>`;
+  if(out){ const bub=el.querySelector('.bubble'); attachLongPress(bub,()=>openMsgMenu(c||state.chats[openCid], m)); }
   return el;
+}
+function attachLongPress(el, cb){
+  let t=null;
+  const start=()=>{ cancel(); t=setTimeout(()=>{ t=null; if(navigator.vibrate)navigator.vibrate(12); cb(); },470); };
+  const cancel=()=>{ if(t){ clearTimeout(t); t=null; } };
+  el.addEventListener('touchstart',start,{passive:true});
+  el.addEventListener('touchmove',cancel,{passive:true});
+  el.addEventListener('touchend',cancel);
+  el.addEventListener('touchcancel',cancel);
+  el.addEventListener('contextmenu',e=>{ e.preventDefault(); cb(); });
+}
+let menuTarget=null;
+function openMsgMenu(c, m){
+  if(!c||!m) return;
+  menuTarget={conv:c.conv, id:m.id, cid:openCid};
+  $('#msgMenuText').textContent=m.text||'';
+  $('#msgMenu').classList.add('show');
+}
+function closeMsgMenu(){ $('#msgMenu').classList.remove('show'); menuTarget=null; }
+function deleteTargetMsg(){
+  const t=menuTarget; closeMsgMenu(); if(!t) return;
+  if(MODE==='cloud'){ deleteCloud(t.conv, t.id); }   // removed-snapshot dissolves on all clients
+  else {
+    const c=state.chats[t.cid]; if(!c) return;
+    const el=$(`.msg[data-id="${t.id}"]`,$('#thread'));
+    c.msgs=c.msgs.filter(x=>x.id!==t.id); saveLocal();
+    if(el) dissolveEl(el,()=>el.remove());
+  }
 }
 function countdownText(m){
   const ms=ttlMs(m.ttl); if(typeof ms!=='number') return '';
