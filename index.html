@@ -654,7 +654,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24d';
+const BUILD='2026.06.24e';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -676,7 +676,7 @@ async function enableNotif(){
   if(typeof Notification==='undefined'){ toast('この環境では通知に対応していません'); return; }
   try{
     const p=await Notification.requestPermission();
-    if(p==='granted'){ toast('通知を有効にしました'); updateBadge(); }
+    if(p==='granted'){ toast('通知を有効にしました'); updateBadge(); registerPush(); }
     else if(p==='denied'){ toast('通知がブロックされています（設定から許可してください）'); }
     else { toast('通知は有効になりませんでした'); }
   }catch(e){ toast('通知を有効にできませんでした'); }
@@ -689,6 +689,29 @@ function updateNotifBtn(){
   if(perm==='granted'){ b.textContent='有効'; b.disabled=true; if(h) h.textContent='未読数をアプリアイコンに表示します（アプリを開いた時に更新）。'; }
   else if(perm==='denied'){ b.textContent='ブロック中'; b.disabled=true; if(h) h.textContent='通知がブロックされています。iOSの設定 → 通知 から許可してください。'; }
   else { b.textContent='有効にする'; b.disabled=false; if(h) h.textContent='ホーム画面に追加したアプリで、未読数をアイコンに表示します（iOS 16.4+）。'; }
+}
+/* ---- Web Push (closed-state notifications) ---- */
+const VAPID_PUBLIC='BFQeXKQ8YEAyejYtN_zgGwm6xSLLeEAvK8XkBQ3E88yCll-5laUEhR-exB7T9zl5w4icxHNi6w5YFZP_zGgiP1I';
+let NOTIFY_URL='';  // set to the Vercel endpoint once deployed, e.g. https://xxx.vercel.app/api/notify
+function urlB64ToU8(b64){ const pad='='.repeat((4-b64.length%4)%4); const s=(b64+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(s); const u=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) u[i]=raw.charCodeAt(i); return u; }
+async function registerPush(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+  try{
+    const reg=await navigator.serviceWorker.register('sw.js');
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:urlB64ToU8(VAPID_PUBLIC)});
+    if(MODE==='cloud' && sub) await setDoc(doc(db,'pushSubs',uid),{sub:JSON.stringify(sub), updatedAt:now()},{merge:true});
+    return true;
+  }catch(e){ return false; }
+}
+async function notifyPeer(peerUid){
+  if(!NOTIFY_URL || MODE!=='cloud') return;
+  try{
+    const s=await getDoc(doc(db,'pushSubs',peerUid));
+    if(!s.exists()) return;
+    const sub=JSON.parse(s.data().sub);
+    fetch(NOTIFY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub,title:'Ghosts',body:'新しいメッセージ'})}).catch(()=>{});
+  }catch(e){}
 }
 
 /* ---- E2EE (DM text, ECDH P-256 + AES-GCM) ---- */
@@ -1560,7 +1583,7 @@ async function doSend(){
         expireAt: typeof ms==='number' ? now()+ms : null};
       preview = currentTtl==='keep' ? text : (currentTtl==='read'?'既読後に消えるメッセージ':'消えるメッセージ');
     }
-    try{ await pushMessage(c,payload,preview); }catch(e){ toast('送信に失敗しました'); }
+    try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid); }catch(e){ toast('送信に失敗しました'); }
   } else {
     const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',text,t:now(),ttl:currentTtl,readAt:null,expired:false};
     c.msgs.push(m); saveLocal();
@@ -1601,7 +1624,7 @@ async function sendImage(file){
         ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{}, expireAt: typeof ms==='number' ? now()+ms : null};
       preview = currentTtl==='keep' ? '📷 写真' : (currentTtl==='read'?'📷 既読後に消える写真':'📷 消える写真');
     }
-    try{ await pushMessage(c,payload,preview); toast('写真を送信しました'); }catch(e){ toast('送信に失敗しました（サイズ超過の可能性）'); }
+    try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid); toast('写真を送信しました'); }catch(e){ toast('送信に失敗しました（サイズ超過の可能性）'); }
   } else {
     const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',type:'image',img:data.url,w:data.w,h:data.h,text:'',t:now(),ttl:currentTtl,readAt:null,expired:false};
     c.msgs.push(m); saveLocal();
