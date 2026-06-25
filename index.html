@@ -295,6 +295,8 @@
   .typing i{width:7px;height:7px;border-radius:50%;background:var(--fade);animation:blink 1.2s infinite}
   .typing i:nth-child(2){animation-delay:.2s}
   .typing i:nth-child(3){animation-delay:.4s}
+  .typing .typing-name{font:600 10px/1 "Space Mono";color:var(--fade);margin-bottom:5px;width:100%;letter-spacing:.05em}
+  .typing:has(.typing-name){flex-wrap:wrap}
   @keyframes blink{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
 
   /* composer */
@@ -1187,7 +1189,45 @@ function buildTtlStrip(){
     strip.appendChild(b);
   });
 }
-function teardownChat(){ if(chatUnsub){ chatUnsub(); chatUnsub=null; } openCid=null; }
+let typingUnsub=null, lastTypingWrite=0, typingHideTimer=null;
+function convDocRef(c){ return c.isGroup ? doc(db,'groups',c.conv) : doc(db,'connections',c.conv); }
+function teardownChat(){
+  stopTyping();
+  if(typingUnsub){ typingUnsub(); typingUnsub=null; }
+  hideTyping();
+  if(chatUnsub){ chatUnsub(); chatUnsub=null; }
+  openCid=null;
+}
+function onTyping(){
+  if(MODE!=='cloud'||!openCid) return; const c=state.chats[openCid]; if(!c||!c.peer.uid) return;
+  const t=now(); if(t-lastTypingWrite<2500) return; lastTypingWrite=t;
+  setDoc(convDocRef(c),{typingAt:{[uid]:t}},{merge:true}).catch(()=>{});
+}
+function stopTyping(){
+  const wasOpen=openCid; lastTypingWrite=0;
+  if(MODE!=='cloud'||!wasOpen) return; const c=state.chats[wasOpen]; if(!c||!c.peer.uid) return;
+  setDoc(convDocRef(c),{typingAt:{[uid]:0}},{merge:true}).catch(()=>{});
+}
+function subscribeTyping(c){
+  try{
+    typingUnsub=onSnapshot(convDocRef(c),snap=>{
+      const d=snap.data()||{}; const ta=d.typingAt||{};
+      const active=Object.keys(ta).filter(u=>u!==uid && (now()-ta[u])<4000);
+      if(active.length) showTyping(c,active); else hideTyping();
+    },()=>{});
+  }catch(e){}
+}
+function showTyping(c, uids){
+  hideTyping();
+  const th=$('#thread'); if(!th) return;
+  const el=document.createElement('div'); el.className='typing'; el.id='typingInd';
+  if(c.isGroup){ let nm=uids[0]; const dm=state.chats[uids[0]]; if(dm&&dm.peer) nm=dm.peer.name||nm;
+    const lbl=document.createElement('div'); lbl.className='typing-name'; lbl.textContent=(uids.length>1?`${nm} ほか${uids.length-1}人`:nm)+' が入力中'; el.appendChild(lbl); }
+  el.insertAdjacentHTML('beforeend','<i></i><i></i><i></i>');
+  th.appendChild(el); th.scrollTop=th.scrollHeight;
+  clearTimeout(typingHideTimer); typingHideTimer=setTimeout(hideTyping,4500);
+}
+function hideTyping(){ const e=$('#typingInd'); if(e) e.remove(); clearTimeout(typingHideTimer); }
 
 function openChat(cid){
   teardownChat(); openCid=cid;
@@ -1203,7 +1243,7 @@ function openChat(cid){
   $('#chatHeadMeta').style.cursor = c.isGroup ? 'pointer' : 'default';
   buildTtlStrip(); go('chat');
 
-  if(MODE==='cloud' && c.peer.uid){ clearUnread(c); subscribeMessages(c.conv, c); }
+  if(MODE==='cloud' && c.peer.uid){ clearUnread(c); subscribeMessages(c.conv, c); subscribeTyping(c); }
   else { renderThread(); markLocalRead(cid); }
   setTimeout(()=>$('#thread').scrollTop=$('#thread').scrollHeight,60);
 }
@@ -1228,6 +1268,7 @@ function subscribeMessages(conv, c){
         const m=mapMsg(id,d);
         if(ch.type==='added'){
           if(c.msgs.find(x=>x.id===id)) return;
+          hideTyping();
           c.msgs.push(m);
           const day=fmtDay(m.t);
           if(day && day!==lastDay){ const ds=document.createElement('div'); ds.className='daysep day'; ds.textContent=day; $('#thread').appendChild(ds); lastDay=day; }
@@ -1390,7 +1431,7 @@ function countdownText(m){
 
 /* ---- send ---- */
 const input=$('#msgInput'), sendBtn=$('#sendBtn');
-input.addEventListener('input',()=>{ input.style.height='auto'; input.style.height=Math.min(120,input.scrollHeight)+'px'; sendBtn.disabled=!input.value.trim(); });
+input.addEventListener('input',()=>{ input.style.height='auto'; input.style.height=Math.min(120,input.scrollHeight)+'px'; sendBtn.disabled=!input.value.trim(); onTyping(); });
 input.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); doSend(); } });
 sendBtn.addEventListener('click',doSend);
 const attachBtn=$('#attachBtn'), imgFile=$('#imgFile');
@@ -1404,7 +1445,7 @@ if(lightbox) lightbox.addEventListener('click',()=>{ lightbox.classList.remove('
 async function doSend(){
   const text=input.value.trim(); if(!text||!openCid) return;
   const c=state.chats[openCid];
-  input.value=''; input.style.height='auto'; sendBtn.disabled=true;
+  input.value=''; input.style.height='auto'; sendBtn.disabled=true; stopTyping();
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
     const payload={from:uid, fromName:me.nick||me.id, text, ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
