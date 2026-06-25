@@ -210,6 +210,11 @@
   .lightbox{position:fixed;inset:0;z-index:80;background:rgba(3,4,6,.94);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s ease;padding:20px}
   .lightbox.show{opacity:1;pointer-events:auto}
   .lightbox img{max-width:100%;max-height:100%;border-radius:10px}
+  .msglink{color:var(--spectral);text-decoration:underline;text-underline-offset:2px;word-break:break-all}
+  .daysep.day{margin:18px auto 12px;font:600 11px/1 "Space Mono";letter-spacing:.12em;color:var(--fade-2);background:var(--void-2);border:1px solid var(--line);padding:5px 12px;border-radius:999px;width:fit-content}
+  .msgimg{opacity:0;transition:opacity .34s ease}
+  .msgimg.ld{opacity:1}
+  .build-label{text-align:center;margin-top:26px;font:400 11px/1 "Space Mono";letter-spacing:.14em;color:var(--fade-2)}
 
   /* ================= CHAT LIST ================= */
   .list{flex:1;overflow-y:auto;padding:6px 0}
@@ -433,6 +438,7 @@
       <div class="set-row"><div class="k">招待</div><div class="v"><a id="setInvite" style="color:var(--spectral);cursor:pointer">招待リンク / QR を開く</a></div></div>
       <p class="sub" style="margin-top:22px">同じIDを別の端末で使うには、起動画面で「ログイン」を選び、このGhost IDとパスワードでサインインしてください。新しいIDは作られません。</p>
       <button class="btn btn-ghost" id="logoutBtn" type="button" style="margin-top:20px;color:var(--danger);border-color:rgba(255,107,107,.3)">ログアウト</button>
+      <div class="build-label">GHOSTS · build <span id="buildVer">—</span></div>
     </div>
   </section>
 
@@ -558,6 +564,10 @@
 <div class="msg-sheet" id="msgMenu">
   <div class="msg-sheet-card">
     <div class="msg-sheet-prev" id="msgMenuText"></div>
+    <button class="msg-sheet-btn" id="msgCopy" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      コピー
+    </button>
     <button class="msg-sheet-btn danger" id="msgDel" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
       全員から削除
@@ -632,6 +642,17 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
+const BUILD='2026.06.24';
+function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
+function fmtDay(t){
+  if(!t) return '';
+  const d=new Date(t), n=new Date();
+  const ymd=x=>x.getFullYear()*10000+x.getMonth()*100+x.getDate();
+  const a=ymd(d), today=ymd(n); const y=new Date(n); y.setDate(n.getDate()-1);
+  if(a===today) return '今日';
+  if(a===ymd(y)) return '昨日';
+  return (d.getMonth()+1)+'月'+d.getDate()+'日';
+}
 function fileToAvatar(file){
   return new Promise((res,rej)=>{
     if(!file||!file.type.startsWith('image/')){ rej(); return; }
@@ -921,6 +942,7 @@ function openSettings(){
   $('#setId').textContent=me.id;
   $('#setAv').innerHTML=avInner(me.nick||me.id, me.avatar);
   $('#setAvRemove').style.display = me.avatar ? 'inline-flex' : 'none';
+  const bv=$('#buildVer'); if(bv) bv.textContent=BUILD;
   go('settings');
 }
 const toSet=$('#toSettings'); if(toSet) toSet.addEventListener('click',openSettings);
@@ -951,6 +973,7 @@ if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{
 
 /* ---- message action sheet (long-press delete) ---- */
 const msgDelBtn=$('#msgDel'); if(msgDelBtn) msgDelBtn.addEventListener('click',deleteTargetMsg);
+const msgCopyBtn=$('#msgCopy'); if(msgCopyBtn) msgCopyBtn.addEventListener('click',copyTargetMsg);
 const msgCancelBtn=$('#msgCancel'); if(msgCancelBtn) msgCancelBtn.addEventListener('click',closeMsgMenu);
 const msgMenuEl=$('#msgMenu'); if(msgMenuEl) msgMenuEl.addEventListener('click',e=>{ if(e.target===msgMenuEl) closeMsgMenu(); });
 const readCloseBtn=$('#readClose'); if(readCloseBtn) readCloseBtn.addEventListener('click',closeReadSheet);
@@ -1197,7 +1220,7 @@ function subscribeMessages(conv, c){
   c.msgs=[];
   $('#thread').innerHTML='';
   const sep=document.createElement('div'); sep.className='daysep'; sep.textContent=c.isGroup?'group · end-to-end':'end-to-end encrypted'; $('#thread').appendChild(sep);
-  let lastFrom=null;
+  let lastFrom=null, lastDay=null;
   try{
     chatUnsub=onSnapshot(query(msgsCol(conv),orderBy('ts','asc')),snap=>{
       snap.docChanges().forEach(ch=>{
@@ -1206,6 +1229,8 @@ function subscribeMessages(conv, c){
         if(ch.type==='added'){
           if(c.msgs.find(x=>x.id===id)) return;
           c.msgs.push(m);
+          const day=fmtDay(m.t);
+          if(day && day!==lastDay){ const ds=document.createElement('div'); ds.className='daysep day'; ds.textContent=day; $('#thread').appendChild(ds); lastDay=day; }
           const el=renderMsg(m, m.from!==lastFrom, c); lastFrom=m.from;
           $('#thread').appendChild(el); $('#thread').scrollTop=$('#thread').scrollHeight;
           onMsgArrived(conv,id,d,m,c);
@@ -1287,11 +1312,12 @@ function renderMsg(m,gap,c){
   if(m.type==='image' && m.img){
     body=`<div class="bubble img"><img class="msgimg" src="${m.img}" alt="写真"></div>`;
   } else {
-    body=`<div class="bubble">${esc(m.text)}</div>`;
+    body=`<div class="bubble">${linkify(esc(m.text))}</div>`;
   }
   el.innerHTML=`${sender}${body}<div class="meta-line">${ttlTag}${metaR}</div>`;
-  if(out){ const bub=el.querySelector('.bubble'); attachLongPress(bub,()=>openMsgMenu(c||state.chats[openCid], m)); }
-  if(m.type==='image' && m.img){ const im=el.querySelector('.msgimg'); if(im) im.addEventListener('click',()=>openLightbox(m.img)); }
+  const bub=el.querySelector('.bubble');
+  if(bub) attachLongPress(bub,()=>openMsgMenu(c||state.chats[openCid], m));
+  if(m.type==='image' && m.img){ const im=el.querySelector('.msgimg'); if(im){ im.addEventListener('load',()=>im.classList.add('ld')); if(im.complete) im.classList.add('ld'); im.addEventListener('click',()=>openLightbox(m.img)); } }
   if(out && c && c.isGroup){ const tk=el.querySelector('.tick'); if(tk) tk.addEventListener('click',()=>openReadSheet(c, m.id)); }
   return el;
 }
@@ -1308,9 +1334,20 @@ function attachLongPress(el, cb){
 let menuTarget=null;
 function openMsgMenu(c, m){
   if(!c||!m) return;
-  menuTarget={conv:c.conv, id:m.id, cid:openCid};
-  $('#msgMenuText').textContent=m.text||'';
+  const out=m.from==='me';
+  const hasCopy = m.type!=='image' && !!m.text;
+  const hasDel = out;
+  if(!hasCopy && !hasDel) return;
+  menuTarget={conv:c.conv, id:m.id, cid:openCid, out, text:m.text||'', type:m.type||'text'};
+  $('#msgMenuText').textContent = m.type==='image' ? '📷 写真' : (m.text||'');
+  $('#msgCopy').style.display = hasCopy ? 'flex' : 'none';
+  $('#msgDel').style.display = hasDel ? 'flex' : 'none';
   $('#msgMenu').classList.add('show');
+}
+function copyTargetMsg(){
+  const t=menuTarget; closeMsgMenu(); if(!t||!t.text) return;
+  try{ navigator.clipboard.writeText(t.text).then(()=>toast('コピーしました'),()=>toast('コピーできませんでした')); }
+  catch(e){ toast('コピーできませんでした'); }
 }
 function closeMsgMenu(){ $('#msgMenu').classList.remove('show'); menuTarget=null; }
 function openReadSheet(c, id){
