@@ -217,6 +217,8 @@
   .build-label{text-align:center;margin-top:26px;font:400 11px/1 "Space Mono";letter-spacing:.14em;color:var(--fade-2)}
   .encwait{opacity:.55}
   .encfail{color:var(--fade);font-size:13px}
+  .bubble.img.enc{padding:0!important}
+  .imgenc{width:180px;height:130px;display:grid;place-items:center;border:1px dashed var(--sline);border-radius:14px;color:var(--spectral);font:600 13px "Space Mono";background:var(--soft)}
 
   /* ================= CHAT LIST ================= */
   .list{flex:1;overflow-y:auto;padding:6px 0}
@@ -646,7 +648,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24b';
+const BUILD='2026.06.24c';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -668,6 +670,8 @@ const importPriv=(s)=>crypto.subtle.importKey('pkcs8',b64ToAb(s),{name:'ECDH',na
 const sharedKey=(priv,pub)=>crypto.subtle.deriveKey({name:'ECDH',public:pub},priv,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
 async function encMsg(key,txt){ const iv=crypto.getRandomValues(new Uint8Array(12)); const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,_te.encode(txt)); return {iv:abToB64(iv),ct:abToB64(ct)}; }
 async function decMsg(key,ivb,ctb){ const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64ToAb(ivb)},key,b64ToAb(ctb)); return _tdc.decode(pt); }
+async function encBytesB64(key,u8){ const iv=crypto.getRandomValues(new Uint8Array(12)); const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,u8); return {iv:abToB64(iv),ct:abToB64(ct)}; }
+async function decBytes(key,ivb,ctb){ const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64ToAb(ivb)},key,b64ToAb(ctb)); return new Uint8Array(pt); }
 async function ensureKeys(){
   if(MODE!=='cloud') return;
   try{
@@ -695,8 +699,19 @@ async function ensureChatKey(c){
 }
 async function decryptFill(el,m,c){
   const bub=el&&el.querySelector('.bubble'); if(!bub) return;
-  try{ if(!c.aesKey) throw 0; const txt=await decMsg(c.aesKey,m.iv,m.ct); m.text=txt; bub.innerHTML=linkify(esc(txt)); }
-  catch(e){ bub.innerHTML='<span class="encfail">🔒 復号できません</span>'; }
+  try{
+    if(!c.aesKey) throw 0;
+    if(m.imgEnc){
+      const bytes=await decBytes(c.aesKey,m.iv,m.ct);
+      const url='data:image/jpeg;base64,'+abToB64(bytes); m.img=url;
+      bub.classList.remove('enc'); bub.classList.add('img');
+      bub.innerHTML=`<img class="msgimg" src="${url}" alt="写真">`;
+      const im=bub.querySelector('.msgimg');
+      if(im){ im.addEventListener('load',()=>im.classList.add('ld')); if(im.complete) im.classList.add('ld'); im.addEventListener('click',()=>openLightbox(url)); }
+    } else {
+      const txt=await decMsg(c.aesKey,m.iv,m.ct); m.text=txt; bub.innerHTML=linkify(esc(txt));
+    }
+  }catch(e){ bub.innerHTML='<span class="encfail">🔒 復号できません</span>'; }
 }
 function fileToAvatar(file){
   return new Promise((res,rej)=>{
@@ -1345,7 +1360,7 @@ function mapMsg(id,d){
   if(out){ const others=d.readBy?Object.keys(d.readBy).filter(k=>k!==uid):[]; readAt=others.length?d.readBy[others[0]]:null; }
   else { readAt=d.readBy?d.readBy[uid]||null:null; }
   const base={id, from: out?'me':'peer', fromName:d.fromName||'', fromUid:d.from, type:d.type||'text', img:d.img||'', w:d.w||0, h:d.h||0, t:d.ts||now(), ttl:d.ttl, readAt, readBy:d.readBy||{}, expireAt:d.expireAt||null, expired:false};
-  if(d.enc){ base.enc=true; base.iv=d.iv; base.ct=d.ct; base.text=''; }
+  if(d.enc){ base.enc=true; base.iv=d.iv; base.ct=d.ct; base.text=''; if(d.imgEnc){ base.imgEnc=true; base.type='image'; base.img=''; } }
   else { base.text=d.text; }
   return base;
 }
@@ -1400,6 +1415,8 @@ function renderMsg(m,gap,c){
   let body;
   if(m.type==='image' && m.img){
     body=`<div class="bubble img"><img class="msgimg" src="${m.img}" alt="写真"></div>`;
+  } else if(m.type==='image' && m.imgEnc){
+    body=`<div class="bubble img enc"><div class="imgenc">🔒 写真</div></div>`;
   } else {
     const shown = (m.enc && !m.text) ? '<span class="encwait">🔒…</span>' : linkify(esc(m.text));
     body=`<div class="bubble">${shown}</div>`;
@@ -1537,9 +1554,18 @@ async function sendImage(file){
   let data; try{ data=await compressImage(file); }catch(e){ toast('画像を読み込めませんでした'); return; }
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
-    const payload={from:uid, fromName:me.nick||me.id, type:'image', img:data.url, w:data.w, h:data.h, text:'',
-      ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{}, expireAt: typeof ms==='number' ? now()+ms : null};
-    const preview = currentTtl==='keep' ? '📷 写真' : (currentTtl==='read'?'📷 既読後に消える写真':'📷 消える写真');
+    let payload, preview;
+    if(!c.isGroup && c.aesKey){
+      const raw=b64ToAb(data.url.split(',')[1]);
+      const e=await encBytesB64(c.aesKey, raw);
+      payload={from:uid, fromName:me.nick||me.id, enc:1, imgEnc:1, iv:e.iv, ct:e.ct, type:'image', w:data.w, h:data.h,
+        ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{}, expireAt: typeof ms==='number' ? now()+ms : null};
+      preview='🔒 写真';
+    } else {
+      payload={from:uid, fromName:me.nick||me.id, type:'image', img:data.url, w:data.w, h:data.h, text:'',
+        ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{}, expireAt: typeof ms==='number' ? now()+ms : null};
+      preview = currentTtl==='keep' ? '📷 写真' : (currentTtl==='read'?'📷 既読後に消える写真':'📷 消える写真');
+    }
     try{ await pushMessage(c,payload,preview); toast('写真を送信しました'); }catch(e){ toast('送信に失敗しました（サイズ超過の可能性）'); }
   } else {
     const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',type:'image',img:data.url,w:data.w,h:data.h,text:'',t:now(),ttl:currentTtl,readAt:null,expired:false};
