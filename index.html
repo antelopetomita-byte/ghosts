@@ -215,6 +215,8 @@
   .msgimg{opacity:0;transition:opacity .34s ease}
   .msgimg.ld{opacity:1}
   .build-label{text-align:center;margin-top:26px;font:400 11px/1 "Space Mono";letter-spacing:.14em;color:var(--fade-2)}
+  .encwait{opacity:.55}
+  .encfail{color:var(--fade);font-size:13px}
 
   /* ================= CHAT LIST ================= */
   .list{flex:1;overflow-y:auto;padding:6px 0}
@@ -644,7 +646,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24';
+const BUILD='2026.06.24b';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -654,6 +656,47 @@ function fmtDay(t){
   if(a===today) return '今日';
   if(a===ymd(y)) return '昨日';
   return (d.getMonth()+1)+'月'+d.getDate()+'日';
+}
+
+/* ---- E2EE (DM text, ECDH P-256 + AES-GCM) ---- */
+const _te=new TextEncoder(), _tdc=new TextDecoder();
+function abToB64(buf){ let s=''; const b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
+function b64ToAb(s){ const bin=atob(s); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u; }
+async function genKeys(){ const kp=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveKey']); const pub=await crypto.subtle.exportKey('raw',kp.publicKey); const priv=await crypto.subtle.exportKey('pkcs8',kp.privateKey); return {pub:abToB64(pub),priv:abToB64(priv)}; }
+const importPub=(s)=>crypto.subtle.importKey('raw',b64ToAb(s),{name:'ECDH',namedCurve:'P-256'},false,[]);
+const importPriv=(s)=>crypto.subtle.importKey('pkcs8',b64ToAb(s),{name:'ECDH',namedCurve:'P-256'},false,['deriveKey']);
+const sharedKey=(priv,pub)=>crypto.subtle.deriveKey({name:'ECDH',public:pub},priv,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+async function encMsg(key,txt){ const iv=crypto.getRandomValues(new Uint8Array(12)); const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,_te.encode(txt)); return {iv:abToB64(iv),ct:abToB64(ct)}; }
+async function decMsg(key,ivb,ctb){ const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64ToAb(ivb)},key,b64ToAb(ctb)); return _tdc.decode(pt); }
+async function ensureKeys(){
+  if(MODE!=='cloud') return;
+  try{
+    let raw=localStorage.getItem('gh_keys_v1'), kp;
+    if(raw) kp=JSON.parse(raw); else { kp=await genKeys(); localStorage.setItem('gh_keys_v1',JSON.stringify(kp)); }
+    me.pubB64=kp.pub; me.privKey=await importPriv(kp.priv);
+    setDoc(doc(db,'users',uid),{pubKey:kp.pub},{merge:true}).catch(()=>{});
+  }catch(e){ me.privKey=null; }
+}
+function backfillKeys(){
+  if(MODE!=='cloud'||!me.pubB64) return;
+  if(localStorage.getItem('gh_keys_bf_v1')) return;
+  setTimeout(()=>{ try{
+    state.order.forEach(pid=>{ const p=state.chats[pid]; if(p&&!p.isGroup&&p.peer&&p.peer.uid)
+      setDoc(doc(db,'users',p.peer.uid,'contacts',uid),{pubKey:me.pubB64},{merge:true}).catch(()=>{}); });
+    localStorage.setItem('gh_keys_bf_v1','1');
+  }catch(e){} },2600);
+}
+async function ensureChatKey(c){
+  if(!c||c.isGroup) return null;
+  if(c.aesKey!==undefined) return c.aesKey;
+  c.aesKey=null;
+  try{ if(me.privKey && c.peer.pubKey){ const pk=await importPub(c.peer.pubKey); c.aesKey=await sharedKey(me.privKey,pk); } }catch(e){ c.aesKey=null; }
+  return c.aesKey;
+}
+async function decryptFill(el,m,c){
+  const bub=el&&el.querySelector('.bubble'); if(!bub) return;
+  try{ if(!c.aesKey) throw 0; const txt=await decMsg(c.aesKey,m.iv,m.ct); m.text=txt; bub.innerHTML=linkify(esc(txt)); }
+  catch(e){ bub.innerHTML='<span class="encfail">🔒 復号できません</span>'; }
 }
 function fileToAvatar(file){
   return new Promise((res,rej)=>{
@@ -816,10 +859,10 @@ async function doLogin(){
 /* ======================================================================
    APP ENTRY
    ====================================================================== */
-function enterApp(){
+async function enterApp(){
   $('#myAv').innerHTML=avInner(me.nick||me.id, me.avatar)+'<span class="dot on"></span>';
   startReaper();
-  if(MODE==='cloud'){ subscribeContacts(); subscribeGroups(); } else renderList();
+  if(MODE==='cloud'){ await ensureKeys(); subscribeContacts(); subscribeGroups(); backfillKeys(); } else renderList();
 }
 
 /* ======================================================================
@@ -864,7 +907,7 @@ function subscribeContacts(){
         const cid=ch.doc.id, d=ch.doc.data();
         if(ch.type==='removed'){ delete state.chats[cid]; state.order=state.order.filter(x=>x!==cid); return; }
         const existing=state.chats[cid];
-        state.chats[cid]={peer:{id:d.ghostId,name:d.nickname||d.ghostId,avatar:d.avatar||'',uid:cid,online:true},
+        state.chats[cid]={peer:{id:d.ghostId,name:d.nickname||d.ghostId,avatar:d.avatar||'',pubKey:d.pubKey||'',uid:cid,online:true},
           conv:[uid,cid].sort().join('__'), isGroup:false, unread:d.unread||0,
           msgs:existing?existing.msgs:[], lastText:d.lastText, lastTs:d.lastTs};
         if(!state.order.includes(cid)) state.order.unshift(cid);
@@ -912,7 +955,7 @@ async function ensureInvite(){
       }
       if(!token){
         token=genToken();
-        await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, avatar:me.avatar||'', active:true, createdAt:serverTimestamp()});
+        await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, avatar:me.avatar||'', pubKey:me.pubB64||'', active:true, createdAt:serverTimestamp()});
         await setDoc(doc(db,'users',uid),{inviteToken:token},{merge:true});
       }
       me.invite=token;
@@ -928,7 +971,7 @@ async function regenInvite(){            // revoke old, issue new
   try{
     if(me.invite) await setDoc(doc(db,'invites',me.invite),{active:false},{merge:true});
     const token=genToken();
-    await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, avatar:me.avatar||'', active:true, createdAt:serverTimestamp()});
+    await setDoc(doc(db,'invites',token),{from:uid, ghostId:me.id, nickname:me.nick||me.id, avatar:me.avatar||'', pubKey:me.pubB64||'', active:true, createdAt:serverTimestamp()});
     await setDoc(doc(db,'users',uid),{inviteToken:token},{merge:true});
     me.invite=token; myInviteUrl=SITE+'?invite='+token; qrDrawn=false; $('#qrCard').innerHTML='';
     $('#inviteLink').value=myInviteUrl; renderQR();
@@ -1141,25 +1184,25 @@ async function acceptInvite(token){
     if(!snap.exists()||snap.data().active===false){ toast('無効な招待リンクです'); return; }
     const d=snap.data();
     if(d.from===uid){ toast('自分の招待リンクです'); return; }
-    showConnect(d.ghostId, d.nickname||d.ghostId, d.from, d.avatar||'');
+    showConnect(d.ghostId, d.nickname||d.ghostId, d.from, d.avatar||'', d.pubKey||'');
   }catch(e){ toast('招待の確認に失敗しました'); }
 }
 async function acceptLegacy(ghostId){     // local demo only
   showConnect(ghostId, ghostId, null);
 }
-function showConnect(ghostId,nick,peerUid,avatar){
+function showConnect(ghostId,nick,peerUid,avatar,pubKey){
   $('#resAv').innerHTML=avInner(nick, avatar);
   $('#resName').textContent=nick; $('#resId').textContent=ghostId;
   $('#searchResult').classList.add('show');
   $('#addBtn').textContent='接続';
-  $('#addBtn').onclick=()=>{ connectWith(ghostId,nick,peerUid,avatar); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
+  $('#addBtn').onclick=()=>{ connectWith(ghostId,nick,peerUid,avatar,pubKey); $('#searchResult').classList.remove('show'); $('#searchId').value=''; };
 }
-async function connectWith(ghostId,nick,peerUid,avatar){
+async function connectWith(ghostId,nick,peerUid,avatar,pubKey){
   if(MODE==='cloud' && peerUid){
     try{
       await setDoc(doc(db,'connections',convId(peerUid)),{members:[uid,peerUid].sort(),createdAt:serverTimestamp()},{merge:true});
-      await setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId, nickname:nick||ghostId, avatar:avatar||'', addedAt:serverTimestamp()},{merge:true});
-      await setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, nickname:me.nick||me.id, avatar:me.avatar||'', addedAt:serverTimestamp()},{merge:true});
+      await setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId, nickname:nick||ghostId, avatar:avatar||'', pubKey:pubKey||'', addedAt:serverTimestamp()},{merge:true});
+      await setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, nickname:me.nick||me.id, avatar:me.avatar||'', pubKey:me.pubB64||'', addedAt:serverTimestamp()},{merge:true});
     }catch(e){ toast('接続に失敗しました'); return; }
     toast((nick||ghostId)+' と接続しました'); openChat(peerUid);
   } else {
@@ -1229,7 +1272,7 @@ function showTyping(c, uids){
 }
 function hideTyping(){ const e=$('#typingInd'); if(e) e.remove(); clearTimeout(typingHideTimer); }
 
-function openChat(cid){
+async function openChat(cid){
   teardownChat(); openCid=cid;
   const c=state.chats[cid]; if(!c) return;
   const av=$('#peerAv');
@@ -1243,7 +1286,7 @@ function openChat(cid){
   $('#chatHeadMeta').style.cursor = c.isGroup ? 'pointer' : 'default';
   buildTtlStrip(); go('chat');
 
-  if(MODE==='cloud' && c.peer.uid){ clearUnread(c); subscribeMessages(c.conv, c); subscribeTyping(c); }
+  if(MODE==='cloud' && c.peer.uid){ clearUnread(c); if(!c.isGroup) await ensureChatKey(c); if(!c.isGroup && c.aesKey) $('#peerStatus').textContent='🔒 暗号化された会話'; subscribeMessages(c.conv, c); subscribeTyping(c); }
   else { renderThread(); markLocalRead(cid); }
   setTimeout(()=>$('#thread').scrollTop=$('#thread').scrollHeight,60);
 }
@@ -1274,9 +1317,11 @@ function subscribeMessages(conv, c){
           if(day && day!==lastDay){ const ds=document.createElement('div'); ds.className='daysep day'; ds.textContent=day; $('#thread').appendChild(ds); lastDay=day; }
           const el=renderMsg(m, m.from!==lastFrom, c); lastFrom=m.from;
           $('#thread').appendChild(el); $('#thread').scrollTop=$('#thread').scrollHeight;
+          if(m.enc) decryptFill(el,m,c);
           onMsgArrived(conv,id,d,m,c);
         } else if(ch.type==='modified'){
-          const idx=c.msgs.findIndex(x=>x.id===id); if(idx>=0) c.msgs[idx]=m;
+          const idx=c.msgs.findIndex(x=>x.id===id);
+          if(idx>=0){ const old=c.msgs[idx]; if(old&&old.text&&m.enc&&!m.text) m.text=old.text; c.msgs[idx]=m; }
           const el=$(`.msg[data-id="${id}"]`,$('#thread'));
           if(el){ const tk=el.querySelector('.tick'); if(tk){ const ri=readInfo(m,c); tk.textContent=ri.label; tk.classList.toggle('read',ri.read); } }
           if(groupReadComplete(d,c)) deleteCloud(conv,id);
@@ -1299,7 +1344,10 @@ function mapMsg(id,d){
   let readAt=null;
   if(out){ const others=d.readBy?Object.keys(d.readBy).filter(k=>k!==uid):[]; readAt=others.length?d.readBy[others[0]]:null; }
   else { readAt=d.readBy?d.readBy[uid]||null:null; }
-  return {id, from: out?'me':'peer', fromName:d.fromName||'', fromUid:d.from, text:d.text, type:d.type||'text', img:d.img||'', w:d.w||0, h:d.h||0, t:d.ts||now(), ttl:d.ttl, readAt, readBy:d.readBy||{}, expireAt:d.expireAt||null, expired:false};
+  const base={id, from: out?'me':'peer', fromName:d.fromName||'', fromUid:d.from, type:d.type||'text', img:d.img||'', w:d.w||0, h:d.h||0, t:d.ts||now(), ttl:d.ttl, readAt, readBy:d.readBy||{}, expireAt:d.expireAt||null, expired:false};
+  if(d.enc){ base.enc=true; base.iv=d.iv; base.ct=d.ct; base.text=''; }
+  else { base.text=d.text; }
+  return base;
 }
 function readInfo(m,c){
   if(c && c.isGroup){
@@ -1353,7 +1401,8 @@ function renderMsg(m,gap,c){
   if(m.type==='image' && m.img){
     body=`<div class="bubble img"><img class="msgimg" src="${m.img}" alt="写真"></div>`;
   } else {
-    body=`<div class="bubble">${linkify(esc(m.text))}</div>`;
+    const shown = (m.enc && !m.text) ? '<span class="encwait">🔒…</span>' : linkify(esc(m.text));
+    body=`<div class="bubble">${shown}</div>`;
   }
   el.innerHTML=`${sender}${body}<div class="meta-line">${ttlTag}${metaR}</div>`;
   const bub=el.querySelector('.bubble');
@@ -1448,9 +1497,17 @@ async function doSend(){
   input.value=''; input.style.height='auto'; sendBtn.disabled=true; stopTyping();
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
-    const payload={from:uid, fromName:me.nick||me.id, text, ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
-      expireAt: typeof ms==='number' ? now()+ms : null};
-    const preview = currentTtl==='keep' ? text : (currentTtl==='read'?'既読後に消えるメッセージ':'消えるメッセージ');
+    let payload, preview;
+    if(!c.isGroup && c.aesKey){
+      const e=await encMsg(c.aesKey,text);
+      payload={from:uid, fromName:me.nick||me.id, enc:1, iv:e.iv, ct:e.ct, type:'text', ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
+        expireAt: typeof ms==='number' ? now()+ms : null};
+      preview='🔒 メッセージ';
+    } else {
+      payload={from:uid, fromName:me.nick||me.id, text, ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
+        expireAt: typeof ms==='number' ? now()+ms : null};
+      preview = currentTtl==='keep' ? text : (currentTtl==='read'?'既読後に消えるメッセージ':'消えるメッセージ');
+    }
     try{ await pushMessage(c,payload,preview); }catch(e){ toast('送信に失敗しました'); }
   } else {
     const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',text,t:now(),ttl:currentTtl,readAt:null,expired:false};
