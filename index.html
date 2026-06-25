@@ -193,6 +193,14 @@
   .chat-row .unread{flex:none;min-width:21px;height:21px;margin-left:8px;padding:0 6px;border-radius:11px;background:var(--spectral);color:var(--void);font:700 12px/21px "Space Mono";text-align:center;box-shadow:0 0 12px rgba(47,231,168,.45)}
   .chat-row.unreadrow .prev{color:var(--ghost)}
   .chat-row.unreadrow .nm b{color:var(--ghost)}
+  .tick.tappable{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+  .read-head{padding:6px 10px 14px;border-bottom:1px solid var(--line);margin-bottom:6px;text-align:center}
+  .read-head b{font:600 14px "Space Grotesk";color:var(--spectral)}
+  .read-list{max-height:46vh;overflow-y:auto;padding:2px 4px 6px}
+  .read-row{display:flex;align-items:center;gap:12px;padding:9px 8px}
+  .read-row .rn{flex:1;font:500 14px "Inter";color:var(--ghost)}
+  .read-row .rt{font:400 12px "Space Mono";color:var(--fade-2)}
+  .read-row .rt.on{color:var(--spectral)}
 
   /* ================= CHAT LIST ================= */
   .list{flex:1;overflow-y:auto;padding:6px 0}
@@ -540,6 +548,14 @@
       全員から削除
     </button>
     <button class="msg-sheet-btn" id="msgCancel" type="button">キャンセル</button>
+  </div>
+</div>
+
+<div class="msg-sheet" id="readSheet">
+  <div class="msg-sheet-card">
+    <div class="read-head"><b id="readCount">0 / 0 既読</b></div>
+    <div class="read-list" id="readList"></div>
+    <button class="msg-sheet-btn" id="readClose" type="button">閉じる</button>
   </div>
 </div>
 
@@ -922,6 +938,8 @@ if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{
 const msgDelBtn=$('#msgDel'); if(msgDelBtn) msgDelBtn.addEventListener('click',deleteTargetMsg);
 const msgCancelBtn=$('#msgCancel'); if(msgCancelBtn) msgCancelBtn.addEventListener('click',closeMsgMenu);
 const msgMenuEl=$('#msgMenu'); if(msgMenuEl) msgMenuEl.addEventListener('click',e=>{ if(e.target===msgMenuEl) closeMsgMenu(); });
+const readCloseBtn=$('#readClose'); if(readCloseBtn) readCloseBtn.addEventListener('click',closeReadSheet);
+const readSheetEl=$('#readSheet'); if(readSheetEl) readSheetEl.addEventListener('click',e=>{ if(e.target===readSheetEl) closeReadSheet(); });
 
 /* ---- avatar (profile photo) ---- */
 const avFile=$('#avFile');
@@ -1179,7 +1197,7 @@ function subscribeMessages(conv, c){
         } else if(ch.type==='modified'){
           const idx=c.msgs.findIndex(x=>x.id===id); if(idx>=0) c.msgs[idx]=m;
           const el=$(`.msg[data-id="${id}"]`,$('#thread'));
-          if(el){ const tk=el.querySelector('.tick'); if(tk){ tk.textContent=m.readAt?'既読':'送信'; tk.classList.toggle('read',!!m.readAt); } }
+          if(el){ const tk=el.querySelector('.tick'); if(tk){ const ri=readInfo(m,c); tk.textContent=ri.label; tk.classList.toggle('read',ri.read); } }
           if(groupReadComplete(d,c)) deleteCloud(conv,id);
         } else if(ch.type==='removed'){
           const el=$(`.msg[data-id="${id}"]`,$('#thread'));
@@ -1200,7 +1218,15 @@ function mapMsg(id,d){
   let readAt=null;
   if(out){ const others=d.readBy?Object.keys(d.readBy).filter(k=>k!==uid):[]; readAt=others.length?d.readBy[others[0]]:null; }
   else { readAt=d.readBy?d.readBy[uid]||null:null; }
-  return {id, from: out?'me':'peer', fromName:d.fromName||'', fromUid:d.from, text:d.text, t:d.ts||now(), ttl:d.ttl, readAt, expireAt:d.expireAt||null, expired:false};
+  return {id, from: out?'me':'peer', fromName:d.fromName||'', fromUid:d.from, text:d.text, t:d.ts||now(), ttl:d.ttl, readAt, readBy:d.readBy||{}, expireAt:d.expireAt||null, expired:false};
+}
+function readInfo(m,c){
+  if(c && c.isGroup){
+    const others=(c.members||[]).filter(u=>u!==uid);
+    const n=others.filter(u=>m.readBy && m.readBy[u]).length;
+    return {label:n>0?`既読 ${n}`:'送信', read:n>0, group:true};
+  }
+  return {label:m.readAt?('既読 '+fmtTime(m.readAt)):'送信', read:!!m.readAt, group:false};
 }
 
 function onMsgArrived(conv,id,d,m,c){
@@ -1234,7 +1260,7 @@ function renderMsg(m,gap,c){
   el.className='msg '+(out?'out':'in')+(m.ttl&&m.ttl!=='keep'?' eph':'')+(gap?' gap':'');
   el.dataset.id=m.id;
   let metaR='';
-  if(out){ metaR=`<span class="tick ${m.readAt?'read':''}">${m.readAt?'既読':'送信'}</span>`; }
+  if(out){ const ri=readInfo(m,c); metaR=`<span class="tick ${ri.read?'read':''}${ri.group?' tappable':''}">${ri.label}</span>`; }
   let ttlTag='';
   const rule=TTL.find(r=>r.k===m.ttl);
   if(rule && rule.k!=='keep'){
@@ -1244,6 +1270,7 @@ function renderMsg(m,gap,c){
   const sender = (c && c.isGroup && !out && gap && m.fromName) ? `<div class="sender">${esc(m.fromName)}</div>` : '';
   el.innerHTML=`${sender}<div class="bubble">${esc(m.text)}</div><div class="meta-line">${ttlTag}${metaR}</div>`;
   if(out){ const bub=el.querySelector('.bubble'); attachLongPress(bub,()=>openMsgMenu(c||state.chats[openCid], m)); }
+  if(out && c && c.isGroup){ const tk=el.querySelector('.tick'); if(tk) tk.addEventListener('click',()=>openReadSheet(c, m.id)); }
   return el;
 }
 function attachLongPress(el, cb){
@@ -1264,6 +1291,24 @@ function openMsgMenu(c, m){
   $('#msgMenu').classList.add('show');
 }
 function closeMsgMenu(){ $('#msgMenu').classList.remove('show'); menuTarget=null; }
+function openReadSheet(c, id){
+  const m=(c.msgs||[]).find(x=>x.id===id); if(!m) return;
+  const others=(c.members||[]).filter(u=>u!==uid);
+  const ml=$('#readList'); ml.innerHTML='';
+  let readN=0;
+  others.forEach(u=>{
+    const t=m.readBy&&m.readBy[u]; if(t) readN++;
+    let name=u; let av='';
+    if(u===uid){ name=me.nick||me.id; av=me.avatar; }
+    else { const dm=state.chats[u]; if(dm&&dm.peer){ name=dm.peer.name||name; av=dm.peer.avatar||''; } }
+    const row=document.createElement('div'); row.className='read-row';
+    row.innerHTML=`<div class="av sm">${avInner(name,av)}</div><div class="rn">${esc(name)}</div><div class="rt ${t?'on':''}">${t?('既読 '+fmtTime(t)):'未読'}</div>`;
+    ml.appendChild(row);
+  });
+  $('#readCount').textContent=`${readN} / ${others.length} 既読`;
+  $('#readSheet').classList.add('show');
+}
+function closeReadSheet(){ $('#readSheet').classList.remove('show'); }
 function deleteTargetMsg(){
   const t=menuTarget; closeMsgMenu(); if(!t) return;
   if(MODE==='cloud'){ deleteCloud(t.conv, t.id); }   // removed-snapshot dissolves on all clients
