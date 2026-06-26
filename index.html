@@ -635,6 +635,17 @@
   </div>
 </div>
 
+<div class="msg-sheet" id="rowMenu">
+  <div class="msg-sheet-card">
+    <div class="msg-sheet-prev" id="rowMenuName"></div>
+    <button class="msg-sheet-btn danger" id="rowDelete" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+      <span id="rowDeleteLabel">連絡先を削除</span>
+    </button>
+    <button class="msg-sheet-btn" id="rowCancel" type="button">キャンセル</button>
+  </div>
+</div>
+
 <div class="msg-sheet" id="readSheet">
   <div class="msg-sheet-card">
     <div class="read-head"><b id="readCount">0 / 0 既読</b></div>
@@ -703,7 +714,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24i';
+const BUILD='2026.06.24j';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -1119,7 +1130,8 @@ function renderList(){
     const badge = unread ? `<span class="unread">${unread>99?'99+':unread}</span>` : '';
     row.innerHTML=`<div class="av sm${c.isGroup?' grp':''}">${avInnerHtml}${sub}</div>
       <div class="meta"><div class="nm"><b>${esc(c.peer.name||c.peer.id)}</b><time>${t?fmtTime(t):''}</time></div>${prev}</div>${badge}`;
-    row.addEventListener('click',()=>openChat(cid));
+    row.addEventListener('click',()=>{ if(row._lp){ row._lp=false; return; } openChat(cid); });
+    attachLongPress(row,()=>openRowMenu(cid));
     wrap.appendChild(row);
   });
   updateBadge();
@@ -1659,13 +1671,13 @@ function renderMsg(m,gap,c){
 }
 function attachLongPress(el, cb){
   let t=null;
-  const start=()=>{ cancel(); t=setTimeout(()=>{ t=null; if(navigator.vibrate)navigator.vibrate(12); cb(); },470); };
+  const start=()=>{ cancel(); el._lp=false; t=setTimeout(()=>{ t=null; el._lp=true; if(navigator.vibrate)navigator.vibrate(12); cb(); },470); };
   const cancel=()=>{ if(t){ clearTimeout(t); t=null; } };
   el.addEventListener('touchstart',start,{passive:true});
   el.addEventListener('touchmove',cancel,{passive:true});
   el.addEventListener('touchend',cancel);
   el.addEventListener('touchcancel',cancel);
-  el.addEventListener('contextmenu',e=>{ e.preventDefault(); cb(); });
+  el.addEventListener('contextmenu',e=>{ e.preventDefault(); el._lp=true; cb(); });
 }
 let menuTarget=null;
 function openMsgMenu(c, m){
@@ -1899,6 +1911,37 @@ function fxLoop(){
 }
 
 /* clear chat */
+let rowMenuCid=null;
+function openRowMenu(cid){
+  const c=state.chats[cid]; if(!c) return;
+  rowMenuCid=cid;
+  $('#rowMenuName').textContent = c.peer.name||c.peer.id;
+  $('#rowDeleteLabel').textContent = c.isGroup ? 'グループを退出' : '連絡先を削除';
+  $('#rowMenu').classList.add('show');
+}
+function closeRowMenu(){ $('#rowMenu').classList.remove('show'); rowMenuCid=null; }
+async function deleteRowTarget(){
+  const cid=rowMenuCid; const c=cid&&state.chats[cid]; closeRowMenu();
+  if(!c) return;
+  if(MODE!=='cloud'){ delete state.chats[cid]; state.order=state.order.filter(x=>x!==cid); renderList(); toast('削除しました'); return; }
+  try{
+    if(c.isGroup){
+      await updateDoc(doc(db,'groups',cid),{members:arrayRemove(uid)}).catch(()=>{});
+      toast('グループを退出しました');
+    } else {
+      // delete loaded messages first (while connection still exists), then connection, then contact
+      try{ (c.msgs||[]).forEach(m=>deleteCloud(c.conv,m.id)); }catch(e){}
+      await deleteDoc(doc(db,'connections',c.conv)).catch(()=>{});
+      await deleteDoc(doc(db,'users',uid,'contacts',cid)).catch(()=>{});
+      toast('連絡先を削除しました');
+    }
+  }catch(e){ toast('削除に失敗しました'); }
+  delete state.chats[cid]; state.order=state.order.filter(x=>x!==cid); renderList();
+}
+const rowMenuEl=$('#rowMenu'); if(rowMenuEl) rowMenuEl.addEventListener('click',e=>{ if(e.target===rowMenuEl) closeRowMenu(); });
+const rowDeleteBtn=$('#rowDelete'); if(rowDeleteBtn) rowDeleteBtn.addEventListener('click',deleteRowTarget);
+const rowCancelBtn=$('#rowCancel'); if(rowCancelBtn) rowCancelBtn.addEventListener('click',closeRowMenu);
+
 $('#clearChat').addEventListener('click',()=>{
   if(!openCid) return; const c=state.chats[openCid];
   const els=$$('.msg',$('#thread'));
