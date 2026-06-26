@@ -674,8 +674,9 @@ let contactsUnsub=null;
 
 /* ---------- TTL rules (core differentiator) ---------- */
 const TTL = [
-  {k:'keep', label:'残す',   ms:null},
-  {k:'read', label:'既読後', ms:'read'},
+  {k:'keep',    label:'残す',     ms:null},
+  {k:'read24h', label:'既読後24h', ms:'read24h'},
+  {k:'read',    label:'既読後',    ms:'read'},
   {k:'10s',  label:'10秒',   ms:10e3},
   {k:'30s',  label:'30秒',   ms:30e3},
   {k:'1m',   label:'1分',    ms:60e3},
@@ -688,8 +689,9 @@ const TTL = [
   {k:'24h',  label:'24時間', ms:24*60*60e3},
   {k:'7d',   label:'7日',    ms:7*24*60*60e3},
 ];
+const READ24H_MS = 24*60*60e3;
 const ttlMs = k => { const r=TTL.find(x=>x.k===k); return r?r.ms:null; };
-let currentTtl='keep';
+let currentTtl='read24h';
 
 /* ---------- local state (also caches cloud contacts in memory) ---------- */
 const LS='ghosts.v1';
@@ -701,7 +703,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24h';
+const BUILD='2026.06.24i';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -1558,6 +1560,7 @@ function subscribeMessages(conv, c){
           if(idx>=0){ const old=c.msgs[idx]; if(old&&old.text&&m.enc&&!m.text) m.text=old.text; c.msgs[idx]=m; }
           const el=$(`.msg[data-id="${id}"]`,$('#thread'));
           if(el){ const tk=el.querySelector('.tick'); if(tk){ const ri=readInfo(m,c); tk.textContent=ri.label; tk.classList.toggle('read',ri.read); } }
+          if(m.expireAt) scheduleTimedCloud(conv,id,m.expireAt);
           if(groupReadComplete(d,c)) deleteCloud(conv,id);
         } else if(ch.type==='removed'){
           const el=$(`.msg[data-id="${id}"]`,$('#thread'));
@@ -1593,11 +1596,16 @@ function readInfo(m,c){
 }
 
 function onMsgArrived(conv,id,d,m,c){
-  if(typeof ttlMs(m.ttl)==='number' && m.expireAt) scheduleTimedCloud(conv,id,m.expireAt);
+  if(m.expireAt) scheduleTimedCloud(conv,id,m.expireAt);
   if(m.from==='peer'){
     updateDoc(doc(db,'chats',conv,'messages',id),{['readBy.'+uid]:now()}).catch(()=>{});
     if(c && c.unread) clearUnread(c);
     if(m.ttl==='read' && !c.isGroup) setTimeout(()=>deleteCloud(conv,id),5000); // 1:1 reader deletes after a grace
+    if(m.ttl==='read24h' && !d.expireAt){ // reader sets 24h expiry once, on first read
+      const exp=now()+READ24H_MS;
+      updateDoc(doc(db,'chats',conv,'messages',id),{expireAt:exp}).catch(()=>{});
+      scheduleTimedCloud(conv,id,exp);
+    }
     // group 'read' deletion happens when all members have read (see groupReadComplete)
   }
 }
@@ -1627,7 +1635,9 @@ function renderMsg(m,gap,c){
   let ttlTag='';
   const rule=TTL.find(r=>r.k===m.ttl);
   if(rule && rule.k!=='keep'){
-    const txt = rule.k==='read' ? '既読後' : countdownText(m);
+    const txt = rule.k==='read' ? '既読後'
+              : rule.k==='read24h' ? (m.expireAt ? countdownText(m) : '既読後24h')
+              : countdownText(m);
     ttlTag=`<span class="ttl-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span data-cdval>${txt}</span></span>`;
   }
   const sender = (c && c.isGroup && !out && gap && m.fromName) ? `<div class="sender">${esc(m.fromName)}</div>` : '';
@@ -1705,8 +1715,8 @@ function deleteTargetMsg(){
   }
 }
 function countdownText(m){
-  const ms=ttlMs(m.ttl); if(typeof ms!=='number') return '';
-  const target = m.expireAt || (m.t+ms);
+  let target=m.expireAt;
+  if(!target){ const ms=ttlMs(m.ttl); if(typeof ms!=='number') return ''; target=m.t+ms; }
   const left=Math.max(0,target-now()); const s=Math.ceil(left/1000);
   if(s>=86400) return Math.ceil(s/86400)+'日';
   if(s>=3600) return Math.floor(s/3600)+':'+String(Math.floor(s%3600/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
@@ -1742,7 +1752,7 @@ async function doSend(){
     } else {
       payload={from:uid, fromName:me.nick||me.id, text, ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
         expireAt: typeof ms==='number' ? now()+ms : null};
-      preview = currentTtl==='keep' ? text : (currentTtl==='read'?'既読後に消えるメッセージ':'消えるメッセージ');
+      preview = (currentTtl==='keep'||currentTtl==='read24h') ? text : (currentTtl==='read'?'既読後に消えるメッセージ':'消えるメッセージ');
     }
     try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid); }catch(e){ toast('送信に失敗しました'); }
   } else {
@@ -1783,7 +1793,7 @@ async function sendImage(file){
     } else {
       payload={from:uid, fromName:me.nick||me.id, type:'image', img:data.url, w:data.w, h:data.h, text:'',
         ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{}, expireAt: typeof ms==='number' ? now()+ms : null};
-      preview = currentTtl==='keep' ? '📷 写真' : (currentTtl==='read'?'📷 既読後に消える写真':'📷 消える写真');
+      preview = (currentTtl==='keep'||currentTtl==='read24h') ? '📷 写真' : (currentTtl==='read'?'📷 既読後に消える写真':'📷 消える写真');
     }
     try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid); toast('写真を送信しました'); }catch(e){ toast('送信に失敗しました（サイズ超過の可能性）'); }
   } else {
