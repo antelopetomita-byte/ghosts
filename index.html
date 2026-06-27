@@ -335,6 +335,18 @@
   .ttl-chip.on{background:var(--spectral);border-color:var(--spectral);color:#04130d;font-weight:600}
   .ttl-chip.keep.on{background:transparent;border-color:var(--fade);color:var(--ghost)}
   .send-row{display:flex;gap:9px;align-items:flex-end}
+  .emoji-panel{display:none;grid-template-columns:repeat(8,1fr);gap:2px;max-height:184px;overflow-y:auto;
+    padding:8px 4px;margin-bottom:6px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:16px}
+  .emoji-panel.open{display:grid}
+  .emoji-panel button{background:transparent;border:none;font-size:25px;line-height:1;padding:7px 0;border-radius:10px;cursor:pointer}
+  .emoji-panel button:active{background:rgba(47,231,168,.18)}
+  .react-bar{display:flex;gap:4px;justify-content:space-between;padding:10px 10px 12px;border-bottom:1px solid var(--line);margin-bottom:6px}
+  .react-bar button{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:13px;font-size:23px;line-height:1;padding:9px 0;cursor:pointer;transition:.15s}
+  .react-bar button:active{background:rgba(47,231,168,.22);transform:scale(1.12)}
+  .msg-reacts{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+  .msg-reacts .rc{background:rgba(47,231,168,.13);border:1px solid rgba(47,231,168,.3);color:var(--ghost);
+    font:500 12px "Inter";border-radius:11px;padding:2px 8px;display:inline-flex;align-items:center;gap:3px;cursor:pointer}
+  .msg-reacts .rc.mine{background:rgba(47,231,168,.28);border-color:var(--spectral)}
   .msg-input{
     flex:1;background:transparent;border:1px solid var(--spectral);border-radius:22px;
     color:var(--ghost);font:400 15px/1.35 "Inter";padding:11px 16px;outline:none;resize:none;
@@ -581,9 +593,13 @@
     <div class="thread" id="thread"></div>
     <div class="composer">
       <div class="ttl-strip" id="ttlStrip"></div>
+      <div class="emoji-panel" id="emojiPanel"></div>
       <div class="send-row">
         <button class="attach" id="attachBtn" type="button" aria-label="写真を送る">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>
+        </button>
+        <button class="attach" id="emojiBtn" type="button" aria-label="絵文字">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
         </button>
         <input type="file" id="imgFile" accept="image/*" style="display:none" />
         <textarea class="msg-input" id="msgInput" rows="1" placeholder="メッセージ" enterkeyhint="send"></textarea>
@@ -628,6 +644,15 @@
 
 <div class="msg-sheet" id="msgMenu">
   <div class="msg-sheet-card">
+    <div class="react-bar" id="reactBar">
+      <button type="button" data-emo="👍">👍</button>
+      <button type="button" data-emo="❤️">❤️</button>
+      <button type="button" data-emo="😂">😂</button>
+      <button type="button" data-emo="😮">😮</button>
+      <button type="button" data-emo="😢">😢</button>
+      <button type="button" data-emo="🙏">🙏</button>
+      <button type="button" data-emo="🔥">🔥</button>
+    </div>
     <div class="msg-sheet-prev" id="msgMenuText"></div>
     <button class="msg-sheet-btn" id="msgCopy" type="button">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -663,7 +688,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, EmailAuthProvider, linkWithCredential, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, increment } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, increment } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
 /* ======================================================================
    Ghosts — Phase 2 : Firebase realtime + per-message TTL (server delete)
@@ -720,7 +745,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24s';
+const BUILD='2026.06.24t';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -1376,6 +1401,17 @@ const msgDelBtn=$('#msgDel'); if(msgDelBtn) msgDelBtn.addEventListener('click',d
 const msgCopyBtn=$('#msgCopy'); if(msgCopyBtn) msgCopyBtn.addEventListener('click',copyTargetMsg);
 const msgCancelBtn=$('#msgCancel'); if(msgCancelBtn) msgCancelBtn.addEventListener('click',closeMsgMenu);
 const msgMenuEl=$('#msgMenu'); if(msgMenuEl) msgMenuEl.addEventListener('click',e=>{ if(e.target===msgMenuEl) closeMsgMenu(); });
+/* reaction bar */
+const reactBarEl=$('#reactBar');
+if(reactBarEl) reactBarEl.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+  const t=menuTarget; closeMsgMenu(); if(!t) return; reactMsg(t.conv,t.id,b.dataset.emo);
+}));
+/* emoji picker */
+const EMOJI_SET=["😀","😁","😂","🤣","😊","😍","😘","😎","🤩","🥳","😅","😆","🙂","😉","😌","😋","😴","😭","😢","😤","😠","😡","🥺","😩","😏","🤔","🤨","🫡","🥹","😇","🤝","👍","👎","👏","🙏","💪","🙌","🫶","🤙","✌️","👌","🔥","✨","⭐️","🎉","❤️","🧡","💛","💚","💙","💜","🖤","🤍","💔","💯","✅","❌","⚡️","🌈","☀️","🌙","🍺","🍻","🍣","🍜","🍵","🐈","🐕","👻","💀","🎮","🎧","📷","💬"];
+const emojiPanelEl=$('#emojiPanel'), emojiBtnEl=$('#emojiBtn'), msgInputEl=$('#msgInput');
+if(emojiPanelEl) emojiPanelEl.innerHTML=EMOJI_SET.map(e=>`<button type="button">${e}</button>`).join('');
+if(emojiBtnEl) emojiBtnEl.addEventListener('click',()=>{ if(emojiPanelEl) emojiPanelEl.classList.toggle('open'); });
+if(emojiPanelEl) emojiPanelEl.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; insertAtCursor(msgInputEl,b.textContent); });
 const readCloseBtn=$('#readClose'); if(readCloseBtn) readCloseBtn.addEventListener('click',closeReadSheet);
 const readSheetEl=$('#readSheet'); if(readSheetEl) readSheetEl.addEventListener('click',e=>{ if(e.target===readSheetEl) closeReadSheet(); });
 
@@ -1673,6 +1709,7 @@ async function openChat(cid){
 
   if(MODE==='cloud' && c.peer.uid){
     clearUnread(c);
+    { const ep=$('#emojiPanel'); if(ep) ep.classList.remove('open'); }
     $('#peerStatus').textContent='🔑 暗号化を確認中…';
     if(!c.isGroup) await ensureChatKey(c); else await ensureGroupKey(c);
     if(c.aesKey) $('#peerStatus').textContent = c.isGroup ? '🔒 暗号化グループ' : '🔒 暗号化された会話';
@@ -1715,7 +1752,7 @@ function subscribeMessages(conv, c){
           const idx=c.msgs.findIndex(x=>x.id===id);
           if(idx>=0){ const old=c.msgs[idx]; if(old&&old.text&&m.enc&&!m.text) m.text=old.text; c.msgs[idx]=m; }
           const el=$(`.msg[data-id="${id}"]`,$('#thread'));
-          if(el){ const tk=el.querySelector('.tick'); if(tk){ const ri=readInfo(m,c); tk.textContent=ri.label; tk.classList.toggle('read',ri.read); } }
+          if(el){ const tk=el.querySelector('.tick'); if(tk){ const ri=readInfo(m,c); tk.textContent=ri.label; tk.classList.toggle('read',ri.read); } const rb=el.querySelector('.msg-reacts'); if(rb) fillReacts(rb,m,c); }
           if(m.expireAt) scheduleTimedCloud(conv,id,m.expireAt);
           if(groupReadComplete(d,c)) deleteCloud(conv,id);
         } else if(ch.type==='removed'){
@@ -1737,7 +1774,7 @@ function mapMsg(id,d){
   let readAt=null;
   if(out){ const others=d.readBy?Object.keys(d.readBy).filter(k=>k!==uid):[]; readAt=others.length?d.readBy[others[0]]:null; }
   else { readAt=d.readBy?d.readBy[uid]||null:null; }
-  const base={id, from: out?'me':'peer', fromName:d.fromName||'', fromUid:d.from, type:d.type||'text', img:d.img||'', w:d.w||0, h:d.h||0, t:d.ts||now(), ttl:d.ttl, readAt, readBy:d.readBy||{}, expireAt:d.expireAt||null, expired:false};
+  const base={id, from: out?'me':'peer', fromName:d.fromName||'', fromUid:d.from, type:d.type||'text', img:d.img||'', w:d.w||0, h:d.h||0, t:d.ts||now(), ttl:d.ttl, readAt, readBy:d.readBy||{}, expireAt:d.expireAt||null, expired:false, reactions:d.reactions||{}};
   if(d.enc){ base.enc=true; base.iv=d.iv; base.ct=d.ct; base.text=''; if(d.imgEnc){ base.imgEnc=true; base.type='image'; base.img=''; } }
   else { base.text=d.text; }
   return base;
@@ -1781,6 +1818,35 @@ function markLocalRead(cid){
   saveLocal();
 }
 
+function fillReacts(box,m,c){
+  const r=m.reactions||{}; const counts={}; let any=false;
+  Object.keys(r).forEach(u=>{ const e=r[u]; if(e){ counts[e]=(counts[e]||0)+1; any=true; } });
+  if(!any){ box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display='flex';
+  const mine=r[uid]||null;
+  box.innerHTML=Object.keys(counts).map(e=>`<span class="rc${mine===e?' mine':''}" data-emo="${e}">${e} ${counts[e]}</span>`).join('');
+  const conv=(c||state.chats[openCid])&&((c||state.chats[openCid]).conv);
+  box.querySelectorAll('.rc').forEach(s=>s.addEventListener('click',()=>{ if(conv) reactMsg(conv,m.id,s.dataset.emo); }));
+}
+async function reactMsg(conv,id,emo){
+  if(MODE!=='cloud'||!conv||!id||!emo) return;
+  try{
+    const c=state.chats[openCid]; const m=c&&c.msgs&&c.msgs.find(x=>x.id===id);
+    const cur=m&&m.reactions?m.reactions[uid]:null;
+    const ref=doc(db,'chats',conv,'messages',id);
+    if(cur===emo) await updateDoc(ref,{['reactions.'+uid]:deleteField()});
+    else await updateDoc(ref,{['reactions.'+uid]:emo});
+  }catch(e){ toast('リアクションできませんでした'); }
+}
+function insertAtCursor(ta,txt){
+  if(!ta) return;
+  const s=(ta.selectionStart!=null)?ta.selectionStart:ta.value.length;
+  const e=(ta.selectionEnd!=null)?ta.selectionEnd:ta.value.length;
+  ta.value=ta.value.slice(0,s)+txt+ta.value.slice(e);
+  const p=s+txt.length; try{ ta.selectionStart=ta.selectionEnd=p; }catch(_){}
+  ta.dispatchEvent(new Event('input',{bubbles:true}));
+  ta.focus();
+}
 function renderMsg(m,gap,c){
   const out=m.from==='me';
   const el=document.createElement('div');
@@ -1807,6 +1873,7 @@ function renderMsg(m,gap,c){
     body=`<div class="bubble">${shown}</div>`;
   }
   el.innerHTML=`${sender}${body}<div class="meta-line">${ttlTag}${metaR}</div>`;
+  const rbox=document.createElement('div'); rbox.className='msg-reacts'; el.appendChild(rbox); fillReacts(rbox,m,c);
   const bub=el.querySelector('.bubble');
   if(bub) attachLongPress(bub,()=>openMsgMenu(c||state.chats[openCid], m));
   if(m.type==='image' && m.img){ const im=el.querySelector('.msgimg'); if(im){ im.addEventListener('load',()=>im.classList.add('ld')); if(im.complete) im.classList.add('ld'); im.addEventListener('click',()=>openLightbox(m.img)); } }
@@ -1829,11 +1896,13 @@ function openMsgMenu(c, m){
   const out=m.from==='me';
   const hasCopy = m.type!=='image' && !!m.text;
   const hasDel = out;
-  if(!hasCopy && !hasDel) return;
+  const canReact = MODE==='cloud';
+  if(!hasCopy && !hasDel && !canReact) return;
   menuTarget={conv:c.conv, id:m.id, cid:openCid, out, text:m.text||'', type:m.type||'text'};
   $('#msgMenuText').textContent = m.type==='image' ? '📷 写真' : (m.text||'');
   $('#msgCopy').style.display = hasCopy ? 'flex' : 'none';
   $('#msgDel').style.display = hasDel ? 'flex' : 'none';
+  const rb=$('#reactBar'); if(rb) rb.style.display = canReact ? 'flex' : 'none';
   $('#msgMenu').classList.add('show');
 }
 function copyTargetMsg(){
@@ -1897,6 +1966,7 @@ async function doSend(){
   const text=input.value.trim(); if(!text||!openCid) return;
   const c=state.chats[openCid];
   input.value=''; input.style.height='auto'; sendBtn.disabled=true; stopTyping();
+  { const ep=$('#emojiPanel'); if(ep) ep.classList.remove('open'); }
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
     if(c.isGroup && c.aesKey===undefined) await ensureGroupKey(c);
