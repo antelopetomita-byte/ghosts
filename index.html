@@ -720,7 +720,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24r';
+const BUILD='2026.06.24s';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -844,7 +844,7 @@ async function startCall(c){
   let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
   catch(e){ toast('マイクを使用できません'); return; }
   const pc=new RTCPeerConnection(RTC_CONFIG);
-  call={conv:c.conv, peerUid:c.peer.uid, role:'caller', pc, localStream:stream, status:'ringing', added:0, answered:false, name:c.peer.name||c.peer.id, avatar:c.peer.avatar, timer:null, startTs:0};
+  call={conv:c.conv, peerUid:c.peer.uid, role:'caller', pc, localStream:stream, status:'ringing', added:0, answered:false, name:c.peer.name||c.peer.id, avatar:c.peer.avatar, timer:null, startTs:0, createdTs:now()};
   stream.getTracks().forEach(t=>pc.addTrack(t,stream));
   setupPc(pc,'callCandA');
   callUI('calling');
@@ -879,12 +879,33 @@ function hangup(){ if(!call) return; updateDoc(callRef(call.conv),{'call.status'
 function endCall(msg){ if(msg) toast(msg); cleanupCall(); }
 function cleanupCall(){
   if(!call) return;
+  const c0={conv:call.conv, role:call.role, startTs:call.startTs, createdTs:call.createdTs||0};
   try{ if(call.pc) call.pc.close(); }catch(e){}
   try{ if(call.localStream) call.localStream.getTracks().forEach(t=>t.stop()); }catch(e){}
   const a=document.getElementById('remoteAudio'); if(a) try{ a.srcObject=null; }catch(e){}
   if(call.timer) clearInterval(call.timer);
   if(call.ringTimer) clearTimeout(call.ringTimer);
   call=null; hideCallUI();
+  // caller records a call-log entry in the chat history (encrypted, persists)
+  if(c0.role==='caller' && MODE==='cloud'){
+    const answered = c0.startTs>0;
+    const since = now()-(c0.createdTs||0);
+    if(answered || since>1500){
+      const dur = answered ? Math.max(1,Math.floor((now()-c0.startTs)/1000)) : 0;
+      logCall(c0.conv, answered, dur);
+    }
+  }
+}
+async function logCall(conv, answered, durSec){
+  try{
+    const c=state.chats[conv]; if(!c||c.isGroup||MODE!=='cloud') return;
+    if(c.aesKey===undefined) await ensureChatKey(c);
+    if(!c.aesKey) return; // cannot encrypt -> skip (never log plaintext)
+    const label = answered ? ('📞 通話 '+Math.floor(durSec/60)+':'+String(durSec%60).padStart(2,'0')) : '📞 不在着信';
+    const e=await encMsg(c.aesKey,label);
+    const payload={from:uid, fromName:me.nick||me.id, enc:1, iv:e.iv, ct:e.ct, type:'text', call:1, ttl:'keep', ts:now(), createdAt:serverTimestamp(), readBy:{}, expireAt:null};
+    await pushMessage(c,payload,label);
+  }catch(e){}
 }
 function startCallTimer(){
   if(!call) return; call.startTs=now();
