@@ -395,8 +395,8 @@
       </div>
 
       <div id="formCreate">
-        <label class="flabel">ニックネーム</label>
-        <input class="input full" id="regNick" placeholder="表示名（例: JOJO）" maxlength="20" autocomplete="off" />
+        <label class="flabel">ニックネーム <span class="opt">任意・未入力ならID表示</span></label>
+        <input class="input full" id="regNick" placeholder="表示名（任意）" maxlength="20" autocomplete="off" />
         <label class="flabel">Ghost ID</label>
         <div class="id-row">
           <div class="idedit"><span class="pfx">ghost_</span><input class="idinput" id="regIdInput" maxlength="16" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="myname" /></div>
@@ -458,9 +458,9 @@
         </div>
         <input type="file" id="avFile" accept="image/*" style="display:none" />
       </div>
-      <label class="flabel">ニックネーム</label>
+      <label class="flabel">ニックネーム <span class="opt">任意・空欄でID表示</span></label>
       <div class="field">
-        <input class="input" id="setNick" maxlength="20" />
+        <input class="input" id="setNick" maxlength="20" placeholder="未設定（ID表示）" />
         <button class="btn btn-ghost mini" id="saveNick" type="button" style="width:auto">保存</button>
       </div>
       <div class="set-row"><div class="k">Ghost ID</div><div class="v" id="setId">ghost_…</div></div>
@@ -720,7 +720,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24n';
+const BUILD='2026.06.24o';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -1299,19 +1299,20 @@ $('#myAv').addEventListener('click',openSettings);
 const setInviteLink=$('#setInvite'); if(setInviteLink) setInviteLink.addEventListener('click',openAdd);
 const saveNickBtn=$('#saveNick');
 if(saveNickBtn) saveNickBtn.addEventListener('click', async ()=>{
-  const nick=$('#setNick').value.trim(); if(!nick){ toast('ニックネームを入力してください'); return; }
+  const nick=$('#setNick').value.trim();          // empty = optional; display falls back to Ghost ID
   me.nick=nick;
-  $('#myAv').innerHTML=avInner(me.nick||me.id, me.avatar)+'<span class="dot on"></span>';
+  const shown=nick||me.id;
+  $('#myAv').innerHTML=avInner(shown, me.avatar)+'<span class="dot on"></span>';
   if(MODE==='cloud'){
     try{
-      await setDoc(doc(db,'users',uid),{nickname:nick},{merge:true});
-      if(me.invite) setDoc(doc(db,'invites',me.invite),{nickname:nick},{merge:true}).catch(()=>{});
+      await setDoc(doc(db,'users',uid),{nickname:shown},{merge:true});
+      if(me.invite) setDoc(doc(db,'invites',me.invite),{nickname:shown},{merge:true}).catch(()=>{});
       // best-effort: update how existing contacts see me
       state.order.forEach(pid=>{ const p=state.chats[pid]; if(p&&p.peer&&p.peer.uid)
-        setDoc(doc(db,'users',p.peer.uid,'contacts',uid),{nickname:nick},{merge:true}).catch(()=>{}); });
+        setDoc(doc(db,'users',p.peer.uid,'contacts',uid),{nickname:shown},{merge:true}).catch(()=>{}); });
     }catch(e){ toast('保存に失敗しました'); return; }
   } else { state.me=me; saveLocal(); }
-  toast('ニックネームを保存しました'); go('list');
+  toast(nick?'ニックネームを保存しました':'ニックネームを未設定にしました'); go('list');
 });
 const logoutBtn=$('#logoutBtn');
 if(logoutBtn) logoutBtn.addEventListener('click', async ()=>{
