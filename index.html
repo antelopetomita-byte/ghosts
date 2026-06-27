@@ -720,7 +720,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24o';
+const BUILD='2026.06.24p';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -1625,6 +1625,7 @@ async function openChat(cid){
     clearUnread(c);
     if(!c.isGroup) await ensureChatKey(c); else await ensureGroupKey(c);
     if(c.aesKey) $('#peerStatus').textContent = c.isGroup ? '🔒 暗号化グループ' : '🔒 暗号化された会話';
+    else $('#peerStatus').textContent = c.isGroup ? '⚠️ 暗号化できません（作り直してください）' : '⚠️ 暗号化できません（送信不可）';
     subscribeMessages(c.conv, c); subscribeTyping(c);
   }
   else { renderThread(); markLocalRead(cid); }
@@ -1855,9 +1856,10 @@ async function doSend(){
         expireAt: typeof ms==='number' ? now()+ms : null};
       preview='🔒 メッセージ';
     } else {
-      payload={from:uid, fromName:me.nick||me.id, text, ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
-        expireAt: typeof ms==='number' ? now()+ms : null};
-      preview = (currentTtl==='keep'||currentTtl==='read24h') ? text : (currentTtl==='read'?'既読後に消えるメッセージ':'消えるメッセージ');
+      // E2EE unavailable -> never fall back to plaintext
+      toast(c.isGroup ? 'このグループは暗号化できないため送信できません（作り直してください）' : '相手の暗号鍵が取得できず暗号化できないため、送信できません');
+      input.value=text; input.style.height='auto'; input.style.height=Math.min(120,input.scrollHeight)+'px'; sendBtn.disabled=!text.trim();
+      return;
     }
     try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid); }catch(e){ toast('送信に失敗しました'); }
   } else {
@@ -1897,9 +1899,8 @@ async function sendImage(file){
         ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{}, expireAt: typeof ms==='number' ? now()+ms : null};
       preview='🔒 写真';
     } else {
-      payload={from:uid, fromName:me.nick||me.id, type:'image', img:data.url, w:data.w, h:data.h, text:'',
-        ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{}, expireAt: typeof ms==='number' ? now()+ms : null};
-      preview = (currentTtl==='keep'||currentTtl==='read24h') ? '📷 写真' : (currentTtl==='read'?'📷 既読後に消える写真':'📷 消える写真');
+      toast(c.isGroup ? 'このグループは暗号化できないため送信できません（作り直してください）' : '相手の暗号鍵が取得できず暗号化できないため、送信できません');
+      return;
     }
     try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid); toast('写真を送信しました'); }catch(e){ toast('送信に失敗しました（サイズ超過の可能性）'); }
   } else {
