@@ -127,7 +127,8 @@
       <div class="card"><b>🫥 消える</b><p style="margin:6px 0 0">寿命を過ぎたメッセージは復元できない形で削除。</p></div>
       <div class="card"><b>🔒 暗号化</b><p style="margin:6px 0 0">DMもグループも端末間で暗号化。サーバーは中身を持たない。</p></div>
       <div class="card"><b>🤝 招待制</b><p style="margin:6px 0 0">ID検索なし。リンク/QRを渡した相手とだけつながる。</p></div>
-      <div class="card"><b>📞 通話</b><p style="margin:6px 0 0">1対1の音声通話。絵文字で盗聴チェックも可能。</p></div>
+      <div class="card"><b>📞 通話</b><p style="margin:6px 0 0">1対1の音声通話。絵文字で盗聴チェックも可能。通話・不在着信は履歴に残る。</p></div>
+      <div class="card"><b>😀 絵文字・リアクション</b><p style="margin:6px 0 0">絵文字をワンタップ挿入。メッセージ長押しで👍❤️などのリアクション。</p></div>
     </div>
   </section>
 
@@ -198,8 +199,9 @@
     </div>
     <ul class="clean lock">
       <li>方式は ECDH（P-256）で鍵を作り、AES-GCM で暗号化（Web標準の暗号）。</li>
-      <li><b>秘密鍵は端末の中だけ</b>に保存。サーバーにも開発者にも渡らない。</li>
+      <li><b>秘密鍵は端末内のIndexedDBに「取り出し不可（non-extractable）」形式で保存</b>。仮にXSSや悪意ある拡張機能が動いても、鍵を<b>使う</b>ことはできても<b>中身を盗み出せない</b>。サーバーにも開発者にも渡らない。</li>
       <li>DMはテキストも写真も暗号化。一覧には「🔒 メッセージ」とだけ表示。</li>
+      <li><b>暗号化できない相手には送信しない</b>。相手の公開鍵が取得できない場合は「送れません」と拒否し、<b>平文で送ることは一切ない</b>（フォールバック廃止）。</li>
     </ul>
 
     <h3>② グループも暗号化</h3>
@@ -228,6 +230,23 @@
       <li>ID検索による無断追加はなし。リンク/QRを渡した相手とだけつながる。</li>
       <li>連絡先は長押しで削除でき、相手はそれ以降アクセスできなくなる。</li>
     </ul>
+
+    <h3>⑤ サーバーは「配達員」でしかない</h3>
+    <p>データベースのルールを強化し、<b>サーバー（や悪意ある参加者）が余計なことをできない</b>ようにしました。</p>
+    <ul class="clean lock">
+      <li><b>本文の改ざん不可</b> — メッセージは一度送られると、暗号文・種別・送信者を後から書き換えできない（既読・期限の追記だけ許可）。</li>
+      <li><b>なりすまし不可</b> — 「送信者＝本人」でないメッセージは作れない。他人になりすまして送ることができない。</li>
+      <li><b>所有権の乗っ取り不可</b> — グループの所有者やメンバー構成を不正に書き換えできない。</li>
+      <li><b>招待の総当たり不可</b> — 招待リンクのトークンを知らない限り、招待情報を一覧・列挙できない。</li>
+    </ul>
+
+    <h3>⑥ 通知も「本人確認つき」</h3>
+    <p>プッシュ通知の送信も、<b>サーバー側で本人確認</b>してから行います。</p>
+    <ul class="clean lock">
+      <li>通知を出すには<b>本人のログイン証明（IDトークン）</b>が必要。誰でも勝手に通知を送れない。</li>
+      <li>サーバーが<b>「2人が実際につながっているか」を確認</b>してから配信。無関係な相手に通知を飛ばせない。</li>
+      <li>相手の通知先情報は<b>サーバー内で完結</b>。他の利用者に渡らない。連打を防ぐ制限つき。</li>
+    </ul>
   </section>
 
   <!-- 6. how safe -->
@@ -242,6 +261,10 @@
       <tr><td>グループ暗号化</td><td class="yes">あり</td><td class="no">通常は無し</td><td class="yes">あり</td></tr>
       <tr><td>通話の暗号化</td><td class="yes">E2EE</td><td class="yes">E2EE</td><td class="yes">E2EE</td></tr>
       <tr><td>盗聴チェック</td><td class="yes">安全番号</td><td class="yes">絵文字</td><td class="yes">絵文字</td></tr>
+      <tr><td>秘密鍵の保護</td><td class="yes">端末内</td><td class="yes">端末内</td><td class="yes">端末内・取り出し不可</td></tr>
+      <tr><td>なりすまし防止</td><td class="yes">あり</td><td class="yes">あり</td><td class="yes">あり</td></tr>
+      <tr><td>本文の改ざん防止</td><td class="yes">あり</td><td class="yes">あり</td><td class="yes">あり</td></tr>
+      <tr><td>前方秘匿性（鍵が漏れても過去を守る）</td><td class="yes">あり</td><td class="mid">秘密チャット</td><td class="no">なし</td></tr>
       <tr><td>消える設計</td><td class="mid">任意</td><td class="mid">秘密チャット</td><td class="yes">標準</td></tr>
       <tr><td>第三者監査</td><td class="yes">あり</td><td class="mid">一部</td><td class="no">なし</td></tr>
       <tr><td>規模・実績</td><td class="yes">世界規模</td><td class="yes">世界規模</td><td class="no">個人開発</td></tr>
@@ -250,12 +273,12 @@
     <h3>安全性のイメージ</h3>
     <div class="bar"><div class="lab"><span>Signal</span><span class="v">最高</span></div><div class="track"><div class="fill" style="width:100%"></div></div></div>
     <div class="bar"><div class="lab"><span>Telegram（秘密チャット/通話）</span><span class="v">高</span></div><div class="track"><div class="fill" style="width:85%"></div></div></div>
-    <div class="bar"><div class="lab"><span>Ghosts</span><span class="v">中〜高</span></div><div class="track"><div class="fill" style="width:72%"></div></div></div>
+    <div class="bar"><div class="lab"><span>Ghosts</span><span class="v">中〜高</span></div><div class="track"><div class="fill" style="width:78%"></div></div></div>
     <div class="bar"><div class="lab"><span>Telegram（通常チャット）</span><span class="v">中</span></div><div class="track"><div class="fill" style="width:45%"></div></div></div>
 
-    <div class="good"><b>Ghostsの強い点</b> — DMもグループも通話も暗号化／鍵は端末内のみ／消える設計が標準／つながった人だけがアクセス可。「中身を見られない」という核は満たしています。</div>
-    <div class="note"><b>正直な限界</b> — ①消去は無料構成のため“ベストエフォート”（確実なサーバー側の自動削除には有料機能が必要）。②鍵バックアップなし（端末を変えると過去の暗号文は読めない＝消える方向なので安全側）。③第三者の安全監査は未実施。④通話はSTUNのみで、厳しいネット環境では繋がらないことがある。⑤スクショや相手の端末からの流出はどのアプリでも防げない。</div>
-    <p style="font-size:13px;color:var(--fade)">まとめると、<b>「無料で作れるプライバシーアプリとしては上位」</b>。ただし命に関わる機密用途なら、監査済みのSignalを使うのが正解です。Ghostsは「気軽に使えて、ちゃんと消えて、中身は守られる」を狙った設計です。</p>
+    <div class="good"><b>Ghostsの強い点</b> — DMもグループも通話も暗号化／秘密鍵は端末内に<b>取り出し不可</b>で保存／暗号化できない時は<b>送らない</b>（平文フォールバック無し）／<b>なりすまし・本文改ざん・所有権乗っ取りをルールで防止</b>／<b>通知も本人確認つき</b>／消える設計が標準／つながった人だけがアクセス可。「中身を見られない」という核に加え、<b>サーバーや参加者の不正もかなり塞いだ</b>状態です。</div>
+    <div class="note"><b>正直な限界</b> — ①<b>前方秘匿性（Double Ratchet）は未実装</b>。万一いまの鍵が漏れると過去の暗号文も読まれうる（Signalはここが強い）。②消去は無料構成のため“ベストエフォート”（確実なサーバー側自動削除には有料機能が必要）。③鍵バックアップなし（端末を変えると過去の暗号文は読めない＝消える方向なので安全側）。④<b>第三者の安全監査は未実施</b>。⑤通話はSTUNのみで、厳しいネット環境では繋がらないことがある。⑥スクショや相手の端末からの流出はどのアプリでも防げない。</div>
+    <p style="font-size:13px;color:var(--fade)">まとめると、<b>「無料・個人開発のプライバシーアプリとしては、かなり上位」</b>。中身の暗号化に加え、なりすましや改ざん・通知の悪用といった<b>運用面の穴も塞ぎました</b>。残る主な差は<b>前方秘匿性と第三者監査</b>。命に関わる機密用途なら監査済みのSignalが正解ですが、Ghostsは「気軽に使えて、ちゃんと消えて、中身も経路も守られる」を高い水準で狙った設計です。</p>
   </section>
 
   <!-- 7. summary -->
