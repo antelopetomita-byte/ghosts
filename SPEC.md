@@ -7,7 +7,7 @@
 - 使い方ガイド: https://antelopetomita-byte.github.io/ghosts/guide.html
 - リポジトリ: antelopetomita-byte/ghosts（GitHub Pages / main / ルート index.html）
 - 構成: 単一 index.html（HTML/CSS/JS）＋ Firebase（Authentication / Cloud Firestore）＋ Vercel（Web Push 用 API）
-- ビルド表記: 設定画面下部に `build` を表示（現行 `2026.06.24j`）
+- ビルド表記: 設定画面下部に `build` を表示（現行 `2026.06.24k`）
 
 ---
 
@@ -56,7 +56,7 @@
 - 公開鍵は `users` / 招待 / 連絡先に配布。秘密鍵は端末の localStorage（`gh_keys_v1`）にのみ保存。
 - サーバーは平文を保持せず、一覧プレビューは「🔒 メッセージ」「🔒 写真」、復号失敗時は「🔒 復号できません」。
 - 相手の公開鍵が未取得の既存接続では自動的に平文へフォールバック（opportunistic）。
-- グループはプレーンテキスト（グループE2EEは今後）。
+- **グループもE2EE**。グループごとにAES-GCM鍵を1つ生成し、各メンバーの公開鍵でECDHラップして `groups/{gid}.keys` に保存。各自が自分の秘密鍵で取り出して使用。退出者はセキュリティルールにより新着メッセージ・鍵の取得が遮断される（鍵ローテーション不要）。公開鍵未登録のメンバーがいる場合のみ平文にフォールバック。
 
 ## 通知 / バッジ（Web Push）
 - **アプリアイコンの未読バッジ**: `navigator.setAppBadge()`（iOS 16.4+、ホーム画面追加アプリで有効。開いた時に更新）。
@@ -76,7 +76,7 @@
   - `contacts/{peerUid}` { ghostId, nickname, avatar, pubKey, lastText, lastTs, unread }
 - `invites/{token}` { from, ghostId, nickname, avatar, pubKey, active }
 - `connections/{convId}` { members[2], typingAt, call, callCandA[], callCandB[] }   ※convId = 2者のuidをソート連結
-- `groups/{gid}` { name, owner, members[], lastText, lastTs, unread{uid:n}, typingAt }
+- `groups/{gid}` { name, owner, members[], enc, keys{uid:{pub,iv,ct}}, lastText, lastTs, unread{uid:n}, typingAt }
 - `pushSubs/{uid}` { sub(JSON), updatedAt }
 - `chats/{conv}/messages/{id}` { from, fromName, text, type, img, w, h, enc, imgEnc, iv, ct, ttl, ts, createdAt, expireAt, readBy{uid:ts} }
 
@@ -93,10 +93,8 @@
 - E2EE秘密鍵は端末内のみ。**端末を変えると過去の暗号メッセージは読めない**（鍵バックアップは今後）。
 - 通知/バッジ: iOSは「ホーム画面追加アプリ＋通知許可」が必須。バッジはアプリを開いた時に更新。
 - 音声通話: STUNのみ（TURN無し）のため、厳しいNAT環境では繋がらない場合あり。着信はアプリを開いている間のみ（クローズ時の着信呼び出しは今後）。
-- グループはE2EE非対応。
 
 ## 今後（ロードマップ）
-- グループのE2EE / 画像E2EEのグループ対応
 - 鍵バックアップ（端末移行）
 - クローズ時の着信呼び出し（プッシュ連携）
 - グループ音声 / ビデオ通話
