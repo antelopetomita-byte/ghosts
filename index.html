@@ -720,7 +720,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24m';
+const BUILD='2026.06.24n';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -1870,7 +1870,7 @@ async function doSend(){
 async function pushMessage(c, payload, preview){
   const conv=c.conv;
   await addDoc(msgsCol(conv),payload);            // onSnapshot will render it
-  const upd={lastText:preview,lastTs:now(),lastFrom:uid};
+  const upd={lastText:preview,lastTs:now()};
   if(c.isGroup){
     const gupd={...upd};
     (c.members||[]).forEach(mUid=>{ if(mUid!==uid) gupd['unread.'+mUid]=increment(1); });
