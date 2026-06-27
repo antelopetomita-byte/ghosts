@@ -217,6 +217,8 @@
   .call-name{font:600 26px/1.2 "Space Grotesk";color:var(--ghost);margin-top:24px}
   .call-status{font:400 14px/1 "Space Mono";letter-spacing:.18em;color:var(--spectral);margin-top:12px;text-transform:uppercase}
   .call-timer{font:400 15px/1 "Space Mono";color:var(--fade);margin-top:10px}
+  .call-sas{font-size:30px;letter-spacing:8px;margin-top:22px;text-align:center}
+  .call-sas-hint{font:400 12px/1.5 "Inter";color:var(--fade);max-width:22ch;text-align:center;margin:10px auto 0}
   .call-incoming-row,.call-active-row{display:flex;gap:54px;align-items:center}
   .call-btn{width:70px;height:70px;border-radius:50%;border:none;display:grid;place-items:center;cursor:pointer;color:#fff}
   .call-btn svg{width:30px;height:30px}
@@ -601,6 +603,8 @@
     <div class="call-name" id="callName">通話</div>
     <div class="call-status" id="callStatus">呼び出し中…</div>
     <div class="call-timer" id="callTimer"></div>
+    <div class="call-sas" id="callSas" style="display:none"></div>
+    <div class="call-sas-hint" id="callSasHint" style="display:none">この絵文字が相手と一致すれば安全な接続です</div>
   </div>
   <div class="call-incoming-row" id="callIncomingRow" style="display:none">
     <button class="call-btn decline" id="callDecline" type="button" aria-label="拒否">
@@ -714,7 +718,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24k';
+const BUILD='2026.06.24l';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -809,8 +813,23 @@ function setupPc(pc, myCandField){
   pc.onicecandidate=(e)=>{ if(e.candidate&&call){ updateDoc(callRef(call.conv),{[myCandField]:arrayUnion(JSON.stringify(e.candidate))}).catch(()=>{}); } };
   pc.ontrack=(e)=>{ playRemote(e.streams[0]); };
   pc.onconnectionstatechange=()=>{ if(!call)return; const st=pc.connectionState;
-    if(st==='connected'){ if(call.status!=='active'){ call.status='active'; callUI('active'); startCallTimer(); } }
+    if(st==='connected'){ if(call.status!=='active'){ call.status='active'; callUI('active'); startCallTimer(); } computeSAS(); }
     else if(st==='failed'){ endCall('接続できませんでした'); } };
+}
+const SAS_EMO=['🍎','🍊','🍋','🍌','🍉','🍇','🍓','🍒','🍑','🥝','🍅','🥑','🌽','🥕','🍄','🌰','🍞','🧀','🥚','🍔','🍟','🍕','🌭','🌮','🍣','🍙','🍦','🍩','🍪','🎂','🍫','🍬','🍯','⚽','🏀','🏈','⚾','🎾','🎱','🎯','🎲','🎸','🎺','🎻','🥁','🚗','🚕','🚙','🚌','🏎','🚓','🚑','🚒','✈','🚀','⛵','⚓','🌙','⭐','🔥','🌈','❄','☀','🌵'];
+function fpFromSdp(sdp){ const m=/a=fingerprint:sha-256 ([0-9A-Fa-f:]+)/i.exec(sdp||''); return m? m[1].toUpperCase().replace(/:/g,'') : ''; }
+async function computeSAS(){
+  try{
+    const pc=call&&call.pc; if(!pc||!pc.localDescription||!pc.remoteDescription) return;
+    const a=fpFromSdp(pc.localDescription.sdp), b=fpFromSdp(pc.remoteDescription.sdp);
+    if(!a||!b) return;
+    const pair=[a,b].sort().join('');                 // order-independent so both sides match
+    const hash=new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pair)));
+    let s=''; for(let i=0;i<4;i++) s+=SAS_EMO[hash[i]%SAS_EMO.length]+' ';
+    call.sas=s.trim();
+    const el=$('#callSas'); if(el){ el.textContent=call.sas; el.style.display='block'; }
+    const hint=$('#callSasHint'); if(hint) hint.style.display='block';
+  }catch(e){}
 }
 function playRemote(stream){
   let a=document.getElementById('remoteAudio');
@@ -849,7 +868,7 @@ async function acceptCall(){
     await pc.setRemoteDescription(JSON.parse(call.offer));
     const ans=await pc.createAnswer(); await pc.setLocalDescription(ans);
     await updateDoc(callRef(call.conv),{'call.answer':JSON.stringify(ans),'call.status':'active'});
-    call.status='active'; callUI('active'); startCallTimer();
+    call.status='active'; callUI('active'); startCallTimer(); computeSAS();
   }catch(e){ endCall('通話の確立に失敗しました'); }
 }
 function declineCall(){ if(!call) return; updateDoc(callRef(call.conv),{'call.status':'declined'}).catch(()=>{}); cleanupCall(); }
@@ -875,6 +894,7 @@ function callUI(mode){
   $('#callAv').innerHTML=avInner(call.name, call.avatar);
   const status=$('#callStatus'), inRow=$('#callIncomingRow'), actRow=$('#callActiveRow'), timer=$('#callTimer');
   if(timer) timer.textContent='';
+  { const se=$('#callSas'), sh=$('#callSasHint'); if(se && !call.sas){ se.style.display='none'; } if(sh && !call.sas){ sh.style.display='none'; } if(se && call.sas){ se.textContent=call.sas; se.style.display='block'; } if(sh && call.sas){ sh.style.display='block'; } }
   if(mode==='calling'){ status.textContent='呼び出し中…'; inRow.style.display='none'; actRow.style.display='flex'; }
   else if(mode==='incoming'){ status.textContent='着信'; inRow.style.display='flex'; actRow.style.display='none'; }
   else if(mode==='active'){ status.textContent='通話中'; inRow.style.display='none'; actRow.style.display='flex'; }
