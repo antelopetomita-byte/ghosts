@@ -718,7 +718,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24l';
+const BUILD='2026.06.24m';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -768,13 +768,13 @@ async function registerPush(){
     return true;
   }catch(e){ return false; }
 }
-async function notifyPeer(peerUid){
+async function notifyPeer(peerUid, title, body){
   if(!NOTIFY_URL || MODE!=='cloud') return;
   try{
     const s=await getDoc(doc(db,'pushSubs',peerUid));
     if(!s.exists()) return;
     const sub=JSON.parse(s.data().sub);
-    fetch(NOTIFY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub,title:'Ghosts',body:'新しいメッセージ'})}).catch(()=>{});
+    fetch(NOTIFY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub,title:title||'Ghosts',body:body||'新しいメッセージ'})}).catch(()=>{});
   }catch(e){}
 }
 
@@ -795,7 +795,7 @@ function handleCallSignal(conv, d){
   if(cd.status==='ringing' && cd.from!==uid && !call){ incomingCall(conv, cd); return; }
   if(call && call.conv===conv){
     if(call.role==='caller'){
-      if(cd.answer && !call.answered){ call.answered=true; try{ call.pc.setRemoteDescription(JSON.parse(cd.answer)); }catch(e){} }
+      if(cd.answer && !call.answered){ call.answered=true; if(call.ringTimer){ clearTimeout(call.ringTimer); call.ringTimer=null; } try{ call.pc.setRemoteDescription(JSON.parse(cd.answer)); }catch(e){} }
       applyCandidates(d.callCandB||[]);
     } else if(call.role==='callee'){
       applyCandidates(d.callCandA||[]);
@@ -850,6 +850,8 @@ async function startCall(c){
   try{
     const offer=await pc.createOffer(); await pc.setLocalDescription(offer);
     await setDoc(callRef(c.conv),{call:{from:uid,status:'ringing',offer:JSON.stringify(offer),ts:now()},callCandA:[],callCandB:[]},{merge:true});
+    notifyPeer(c.peer.uid, 'Ghosts', '📞 '+(me.nick||me.id)+' から着信');
+    call.ringTimer=setTimeout(()=>{ if(call && call.role==='caller' && !call.answered && call.status==='ringing'){ hangup(); toast('応答がありませんでした'); } }, 45000);
   }catch(e){ endCall('発信に失敗しました'); }
 }
 function incomingCall(conv, cd){
@@ -880,6 +882,7 @@ function cleanupCall(){
   try{ if(call.localStream) call.localStream.getTracks().forEach(t=>t.stop()); }catch(e){}
   const a=document.getElementById('remoteAudio'); if(a) try{ a.srcObject=null; }catch(e){}
   if(call.timer) clearInterval(call.timer);
+  if(call.ringTimer) clearTimeout(call.ringTimer);
   call=null; hideCallUI();
 }
 function startCallTimer(){
