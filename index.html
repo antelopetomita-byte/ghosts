@@ -714,7 +714,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24j';
+const BUILD='2026.06.24k';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -918,6 +918,43 @@ async function ensureChatKey(c){
   c.aesKey=null;
   try{ if(me.privKey && c.peer.pubKey){ const pk=await importPub(c.peer.pubKey); c.aesKey=await sharedKey(me.privKey,pk); } }catch(e){ c.aesKey=null; }
   return c.aesKey;
+}
+/* ---- group E2EE: one AES key per group, wrapped per member via ECDH ---- */
+async function genGroupRawKey(){
+  const k=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+  const raw=await crypto.subtle.exportKey('raw',k); return new Uint8Array(raw);
+}
+async function wrapGroupKey(memberPubB64, rawKeyU8){
+  const pk=await importPub(memberPubB64);
+  const wrapK=await sharedKey(me.privKey, pk);          // ECDH(me.priv, memberPub) -> AES-GCM
+  const e=await encBytesB64(wrapK, rawKeyU8);
+  return {pub:me.pubB64, iv:e.iv, ct:e.ct};             // store wrapper pub so member recomputes
+}
+async function unwrapGroupKey(entry){
+  const pk=await importPub(entry.pub);
+  const wrapK=await sharedKey(me.privKey, pk);          // ECDH(me.priv, wrapperPub) == same secret
+  const rawU8=await decBytes(wrapK, entry.iv, entry.ct);
+  return crypto.subtle.importKey('raw', rawU8, {name:'AES-GCM'}, false, ['encrypt','decrypt']);
+}
+async function ensureGroupKey(c){
+  if(!c||!c.isGroup) return null;
+  if(c.aesKey!==undefined) return c.aesKey;
+  c.aesKey=null;
+  try{
+    const entry=c.keys && c.keys[uid];
+    if(entry && me.privKey) c.aesKey=await unwrapGroupKey(entry);
+  }catch(e){ c.aesKey=null; }
+  return c.aesKey;
+}
+// build a keys map for the given members (uids). returns {map, ok}. ok=false if any pubKey missing.
+async function buildGroupKeyMap(memberUids){
+  const raw=await genGroupRawKey(); const map={}; let ok=true;
+  for(const mUid of memberUids){
+    const pub = mUid===uid ? me.pubB64 : (state.chats[mUid] && state.chats[mUid].peer && state.chats[mUid].peer.pubKey);
+    if(!pub){ ok=false; continue; }
+    map[mUid]=await wrapGroupKey(pub, raw);
+  }
+  return {map, ok, raw};
 }
 async function decryptFill(el,m,c){
   const bub=el&&el.querySelector('.bubble'); if(!bub) return;
@@ -1167,7 +1204,8 @@ function subscribeGroups(){
         const existing=state.chats[gid];
         state.chats[gid]={peer:{id:gid,name:d.name||'グループ',uid:gid,online:false,isGroup:true},
           conv:gid, isGroup:true, members:d.members||[], owner:d.owner, unread:(d.unread&&d.unread[uid])||0,
-          msgs:existing?existing.msgs:[], lastText:d.lastText, lastTs:d.lastTs};
+          msgs:existing?existing.msgs:[], lastText:d.lastText, lastTs:d.lastTs,
+          keys:d.keys||null, enc:!!d.enc, aesKey:existing?existing.aesKey:undefined};
         if(!state.order.includes(gid)) state.order.unshift(gid);
       });
       sortAndRenderList();
@@ -1329,12 +1367,20 @@ if(createGroupBtn) createGroupBtn.addEventListener('click', async ()=>{
   if(!picks.length){ toast('メンバーを1人以上選んでください'); return; }
   const members=[uid, ...picks.map(p=>p.value)];
   const gid='grp_'+genToken().replace('inv_','');
+  let keysMap=null, encOn=false, rawKey=null;
   try{
-    await setDoc(doc(db,'groups',gid),{name, owner:uid, members, createdAt:serverTimestamp(), lastTs:now()});
+    if(me.privKey){ const r=await buildGroupKeyMap(members); if(r.ok){ keysMap=r.map; encOn=true; rawKey=r.raw; } }
+  }catch(e){ keysMap=null; encOn=false; }
+  try{
+    const docData={name, owner:uid, members, createdAt:serverTimestamp(), lastTs:now()};
+    if(encOn){ docData.keys=keysMap; docData.enc=1; }
+    await setDoc(doc(db,'groups',gid),docData);
   }catch(e){ toast('グループ作成に失敗しました'); return; }
-  state.chats[gid]={peer:{id:gid,name,uid:gid,online:false,isGroup:true}, conv:gid, isGroup:true, members, owner:uid, msgs:[], lastTs:now()};
+  const gObj={peer:{id:gid,name,uid:gid,online:false,isGroup:true}, conv:gid, isGroup:true, members, owner:uid, msgs:[], lastTs:now(), keys:keysMap, enc:encOn, aesKey:undefined};
+  if(encOn && rawKey){ try{ gObj.aesKey=await crypto.subtle.importKey('raw',rawKey,{name:'AES-GCM'},false,['encrypt','decrypt']); }catch(e){} }
+  state.chats[gid]=gObj;
   if(!state.order.includes(gid)) state.order.unshift(gid);
-  toast('グループを作成しました');
+  toast(encOn?'暗号化グループを作成しました':'グループを作成しました');
   openChat(gid);
 });
 
@@ -1376,8 +1422,23 @@ function openGroupInfo(c){
 const giAddBtn=$('#giAddBtn');
 if(giAddBtn) giAddBtn.addEventListener('click', async ()=>{
   const picks=$$('#giAdd input:checked'); if(!picks.length){ toast('追加するメンバーを選んでください'); return; }
+  const c=state.chats[infoGid];
   try{
-    await updateDoc(doc(db,'groups',infoGid),{members:arrayUnion(...picks.map(p=>p.value))});
+    const newUids=picks.map(p=>p.value);
+    const upd={members:arrayUnion(...newUids)};
+    // if this is an encrypted group, wrap the group key for each new member
+    if(c && c.enc){
+      // recover the raw group key from my own wrapped entry, then re-wrap for newcomers
+      let raw=null;
+      try{ const ent=c.keys&&c.keys[uid]; if(ent){ const pk=await importPub(ent.pub); const wk=await sharedKey(me.privKey,pk); raw=await decBytes(wk,ent.iv,ent.ct); } }catch(e){}
+      if(raw){
+        for(const nu of newUids){
+          const pub=state.chats[nu]&&state.chats[nu].peer&&state.chats[nu].peer.pubKey;
+          if(pub){ const w=await wrapGroupKey(pub, raw); upd['keys.'+nu]=w; }
+        }
+      }
+    }
+    await updateDoc(doc(db,'groups',infoGid),upd);
     toast('メンバーを追加しました'); go('chat');
   }catch(e){ toast('追加に失敗しました'); }
 });
@@ -1534,7 +1595,12 @@ async function openChat(cid){
   { const cb=$('#callBtn'); if(cb) cb.style.display = (!c.isGroup && MODE==='cloud' && c.peer.uid) ? 'grid' : 'none'; }
   buildTtlStrip(); go('chat');
 
-  if(MODE==='cloud' && c.peer.uid){ clearUnread(c); if(!c.isGroup) await ensureChatKey(c); if(!c.isGroup && c.aesKey) $('#peerStatus').textContent='🔒 暗号化された会話'; subscribeMessages(c.conv, c); subscribeTyping(c); }
+  if(MODE==='cloud' && c.peer.uid){
+    clearUnread(c);
+    if(!c.isGroup) await ensureChatKey(c); else await ensureGroupKey(c);
+    if(c.aesKey) $('#peerStatus').textContent = c.isGroup ? '🔒 暗号化グループ' : '🔒 暗号化された会話';
+    subscribeMessages(c.conv, c); subscribeTyping(c);
+  }
   else { renderThread(); markLocalRead(cid); }
   setTimeout(()=>$('#thread').scrollTop=$('#thread').scrollHeight,60);
 }
@@ -1755,8 +1821,9 @@ async function doSend(){
   input.value=''; input.style.height='auto'; sendBtn.disabled=true; stopTyping();
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
+    if(c.isGroup && c.aesKey===undefined) await ensureGroupKey(c);
     let payload, preview;
-    if(!c.isGroup && c.aesKey){
+    if(c.aesKey){
       const e=await encMsg(c.aesKey,text);
       payload={from:uid, fromName:me.nick||me.id, enc:1, iv:e.iv, ct:e.ct, type:'text', ttl:currentTtl, ts:now(), createdAt:serverTimestamp(), readBy:{},
         expireAt: typeof ms==='number' ? now()+ms : null};
@@ -1795,8 +1862,9 @@ async function sendImage(file){
   let data; try{ data=await compressImage(file); }catch(e){ toast('画像を読み込めませんでした'); return; }
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
+    if(c.isGroup && c.aesKey===undefined) await ensureGroupKey(c);
     let payload, preview;
-    if(!c.isGroup && c.aesKey){
+    if(c.aesKey){
       const raw=b64ToAb(data.url.split(',')[1]);
       const e=await encBytesB64(c.aesKey, raw);
       payload={from:uid, fromName:me.nick||me.id, enc:1, imgEnc:1, iv:e.iv, ct:e.ct, type:'image', w:data.w, h:data.h,
