@@ -720,7 +720,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24p';
+const BUILD='2026.06.24q';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -770,13 +770,12 @@ async function registerPush(){
     return true;
   }catch(e){ return false; }
 }
-async function notifyPeer(peerUid, title, body){
-  if(!NOTIFY_URL || MODE!=='cloud') return;
+async function notifyPeer(peerUid, kind){
+  if(!NOTIFY_URL || MODE!=='cloud' || !peerUid) return;
   try{
-    const s=await getDoc(doc(db,'pushSubs',peerUid));
-    if(!s.exists()) return;
-    const sub=JSON.parse(s.data().sub);
-    fetch(NOTIFY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub,title:title||'Ghosts',body:body||'新しいメッセージ'})}).catch(()=>{});
+    const u=auth.currentUser; if(!u) return;
+    const idToken=await u.getIdToken();
+    fetch(NOTIFY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken, toUid:peerUid, kind:kind||'msg'})}).catch(()=>{});
   }catch(e){}
 }
 
@@ -852,7 +851,7 @@ async function startCall(c){
   try{
     const offer=await pc.createOffer(); await pc.setLocalDescription(offer);
     await setDoc(callRef(c.conv),{call:{from:uid,status:'ringing',offer:JSON.stringify(offer),ts:now()},callCandA:[],callCandB:[]},{merge:true});
-    notifyPeer(c.peer.uid, 'Ghosts', '📞 '+(me.nick||me.id)+' から着信');
+    notifyPeer(c.peer.uid, 'call');
     call.ringTimer=setTimeout(()=>{ if(call && call.role==='caller' && !call.answered && call.status==='ringing'){ hangup(); toast('応答がありませんでした'); } }, 45000);
   }catch(e){ endCall('発信に失敗しました'); }
 }
@@ -1861,7 +1860,7 @@ async function doSend(){
       input.value=text; input.style.height='auto'; input.style.height=Math.min(120,input.scrollHeight)+'px'; sendBtn.disabled=!text.trim();
       return;
     }
-    try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid); }catch(e){ toast('送信に失敗しました'); }
+    try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid,'msg'); }catch(e){ toast('送信に失敗しました'); }
   } else {
     const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',text,t:now(),ttl:currentTtl,readAt:null,expired:false};
     c.msgs.push(m); saveLocal();
@@ -1902,7 +1901,7 @@ async function sendImage(file){
       toast(c.isGroup ? 'このグループは暗号化できないため送信できません（作り直してください）' : '相手の暗号鍵が取得できず暗号化できないため、送信できません');
       return;
     }
-    try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid); toast('写真を送信しました'); }catch(e){ toast('送信に失敗しました（サイズ超過の可能性）'); }
+    try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid,'msg'); toast('写真を送信しました'); }catch(e){ toast('送信に失敗しました（サイズ超過の可能性）'); }
   } else {
     const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',type:'image',img:data.url,w:data.w,h:data.h,text:'',t:now(),ttl:currentTtl,readAt:null,expired:false};
     c.msgs.push(m); saveLocal();
