@@ -720,7 +720,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24q';
+const BUILD='2026.06.24r';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -911,6 +911,17 @@ const _te=new TextEncoder(), _tdc=new TextDecoder();
 function abToB64(buf){ let s=''; const b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
 function b64ToAb(s){ const bin=atob(s); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u; }
 async function genKeys(){ const kp=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveKey']); const pub=await crypto.subtle.exportKey('raw',kp.publicKey); const priv=await crypto.subtle.exportKey('pkcs8',kp.privateKey); return {pub:abToB64(pub),priv:abToB64(priv)}; }
+/* --- private key stored as a NON-EXTRACTABLE CryptoKey in IndexedDB (XSS/extension cannot exfiltrate it) --- */
+function idbOpen(){ return new Promise((res,rej)=>{ const r=indexedDB.open('ghosts_keys',1); r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains('keys')) r.result.createObjectStore('keys'); }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function idbGet(k){ const db=await idbOpen(); return new Promise((res,rej)=>{ const t=db.transaction('keys','readonly').objectStore('keys').get(k); t.onsuccess=()=>res(t.result); t.onerror=()=>rej(t.error); }); }
+async function idbSet(k,v){ const db=await idbOpen(); return new Promise((res,rej)=>{ const t=db.transaction('keys','readwrite').objectStore('keys').put(v,k); t.onsuccess=()=>res(true); t.onerror=()=>rej(t.error); }); }
+async function genKeysNE(){
+  const kp=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveKey']);
+  const pub=await crypto.subtle.exportKey('raw',kp.publicKey);
+  const pkcs8=await crypto.subtle.exportKey('pkcs8',kp.privateKey);
+  const privNE=await crypto.subtle.importKey('pkcs8',pkcs8,{name:'ECDH',namedCurve:'P-256'},false,['deriveKey']); // non-extractable
+  return {pub:abToB64(pub), privKey:privNE};
+}
 const importPub=(s)=>crypto.subtle.importKey('raw',b64ToAb(s),{name:'ECDH',namedCurve:'P-256'},false,[]);
 const importPriv=(s)=>crypto.subtle.importKey('pkcs8',b64ToAb(s),{name:'ECDH',namedCurve:'P-256'},false,['deriveKey']);
 const sharedKey=(priv,pub)=>crypto.subtle.deriveKey({name:'ECDH',public:pub},priv,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
@@ -921,10 +932,29 @@ async function decBytes(key,ivb,ctb){ const pt=await crypto.subtle.decrypt({name
 async function ensureKeys(){
   if(MODE!=='cloud') return;
   try{
-    let raw=localStorage.getItem('gh_keys_v1'), kp;
-    if(raw) kp=JSON.parse(raw); else { kp=await genKeys(); localStorage.setItem('gh_keys_v1',JSON.stringify(kp)); }
-    me.pubB64=kp.pub; me.privKey=await importPriv(kp.priv);
-    setDoc(doc(db,'users',uid),{pubKey:kp.pub},{merge:true}).catch(()=>{});
+    const REC='kp:'+uid;
+    let rec=null; try{ rec=await idbGet(REC); }catch(e){}
+    if(rec && rec.privKey){
+      me.pubB64=rec.pub; me.privKey=rec.privKey;
+    } else {
+      // migrate legacy localStorage key (extractable) -> non-extractable in IndexedDB, then delete the plaintext copy
+      const old=localStorage.getItem('gh_keys_v1');
+      if(old){
+        try{
+          const kp=JSON.parse(old);
+          const privNE=await crypto.subtle.importKey('pkcs8',b64ToAb(kp.priv),{name:'ECDH',namedCurve:'P-256'},false,['deriveKey']);
+          await idbSet(REC,{pub:kp.pub, privKey:privNE});
+          me.pubB64=kp.pub; me.privKey=privNE;
+          localStorage.removeItem('gh_keys_v1');
+        }catch(e){}
+      }
+      if(!me.privKey){
+        const k=await genKeysNE();
+        await idbSet(REC,{pub:k.pub, privKey:k.privKey});
+        me.pubB64=k.pub; me.privKey=k.privKey;
+      }
+    }
+    setDoc(doc(db,'users',uid),{pubKey:me.pubB64},{merge:true}).catch(()=>{});
   }catch(e){ me.privKey=null; }
 }
 function backfillKeys(){
@@ -1622,6 +1652,7 @@ async function openChat(cid){
 
   if(MODE==='cloud' && c.peer.uid){
     clearUnread(c);
+    $('#peerStatus').textContent='🔑 暗号化を確認中…';
     if(!c.isGroup) await ensureChatKey(c); else await ensureGroupKey(c);
     if(c.aesKey) $('#peerStatus').textContent = c.isGroup ? '🔒 暗号化グループ' : '🔒 暗号化された会話';
     else $('#peerStatus').textContent = c.isGroup ? '⚠️ 暗号化できません（作り直してください）' : '⚠️ 暗号化できません（送信不可）';
