@@ -745,7 +745,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24u';
+const BUILD='2026.06.24v';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -1971,7 +1971,7 @@ async function doSend(){
   { const ep=$('#emojiPanel'); if(ep) ep.classList.remove('open'); }
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
-    if(c.isGroup && c.aesKey===undefined) await ensureGroupKey(c);
+    if(!c.aesKey){ if(c.isGroup) await ensureGroupKey(c); else await ensureChatKey(c); }
     let payload, preview;
     if(c.aesKey){
       const e=await encMsg(c.aesKey,text);
@@ -2013,7 +2013,7 @@ async function sendImage(file){
   let data; try{ data=await compressImage(file); }catch(e){ toast('画像を読み込めませんでした'); return; }
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
-    if(c.isGroup && c.aesKey===undefined) await ensureGroupKey(c);
+    if(!c.aesKey){ if(c.isGroup) await ensureGroupKey(c); else await ensureChatKey(c); }
     let payload, preview;
     if(c.aesKey){
       const raw=b64ToAb(data.url.split(',')[1]);
