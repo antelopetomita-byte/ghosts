@@ -745,7 +745,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24t';
+const BUILD='2026.06.24u';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -759,9 +759,10 @@ function fmtDay(t){
 /* ---- app icon badge (Badging API) ---- */
 function totalUnread(){ let n=0; state.order.forEach(id=>{ const c=state.chats[id]; if(c) n+=(c.unread||0); }); return n; }
 function updateBadge(){
-  if(!('setAppBadge' in navigator)) return;
   const n=totalUnread();
-  try{ if(n>0) navigator.setAppBadge(n); else navigator.clearAppBadge&&navigator.clearAppBadge(); }catch(e){}
+  try{ if('setAppBadge' in navigator){ if(n>0) navigator.setAppBadge(n); else navigator.clearAppBadge&&navigator.clearAppBadge(); } }catch(e){}
+  // keep the service worker's counter in sync with the real unread total
+  try{ if(navigator.serviceWorker&&navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({type:'syncCount', n}); }catch(e){}
 }
 async function enableNotif(){
   if(typeof Notification==='undefined'){ toast('この環境では通知に対応していません'); return; }
@@ -777,7 +778,7 @@ function updateNotifBtn(){
   const b=$('#notifBtn'), h=$('#notifHint'); if(!b) return;
   if(!('setAppBadge' in navigator)){ b.textContent='非対応'; b.disabled=true; if(h) h.textContent='この環境ではアイコンバッジに対応していません。iOSはホーム画面に追加したアプリで利用できます。'; return; }
   const perm = (typeof Notification!=='undefined') ? Notification.permission : 'default';
-  if(perm==='granted'){ b.textContent='有効'; b.disabled=true; if(h) h.textContent='未読数をアプリアイコンに表示します（アプリを開いた時に更新）。'; }
+  if(perm==='granted'){ b.textContent='有効'; b.disabled=true; if(h) h.textContent='通知が届くたびにアイコンに未読数を表示します（閉じていてもOK）。'; }
   else if(perm==='denied'){ b.textContent='ブロック中'; b.disabled=true; if(h) h.textContent='通知がブロックされています。iOSの設定 → 通知 から許可してください。'; }
   else { b.textContent='有効にする'; b.disabled=false; if(h) h.textContent='ホーム画面に追加したアプリで、未読数をアイコンに表示します（iOS 16.4+）。'; }
 }
@@ -795,6 +796,7 @@ async function registerPush(){
     return true;
   }catch(e){ return false; }
 }
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible'){ try{ updateBadge(); }catch(e){} } });
 async function notifyPeer(peerUid, kind){
   if(!NOTIFY_URL || MODE!=='cloud' || !peerUid) return;
   try{
