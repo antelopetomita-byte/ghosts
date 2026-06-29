@@ -1798,6 +1798,11 @@ function subscribeMessages(conv, c){
           if(el) dissolveEl(el,()=>el.remove());
         }
       });
+    }, err=>{
+      // a read failure here usually means a stale/mismatched connection (e.g. peer re-created their account)
+      const sep2=document.createElement('div'); sep2.className='daysep'; sep2.style.color='#ff8f8f';
+      sep2.textContent='この会話を読み込めません。連絡先を削除して招待し直してください。';
+      $('#thread').appendChild(sep2);
     });
   }catch(e){ toast('メッセージの取得に失敗'); }
 }
