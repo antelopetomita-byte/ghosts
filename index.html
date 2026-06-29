@@ -745,7 +745,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24w';
+const BUILD='2026.06.24x';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -970,6 +970,12 @@ async function genKeysNE(){
   const privNE=await crypto.subtle.importKey('pkcs8',pkcs8,{name:'ECDH',namedCurve:'P-256'},false,['deriveKey']); // non-extractable
   return {pub:abToB64(pub), privKey:privNE};
 }
+/* --- local plaintext cache: so your own/known messages stay readable even if keys later change; deleted when a message disappears --- */
+function mtOpen(){ return new Promise((res,rej)=>{ const r=indexedDB.open('ghosts_msgs',1); r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains('kv')) r.result.createObjectStore('kv'); }; r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function mtKey(conv,id){ return conv+'__'+id; }
+async function mtGet(k){ try{ const db=await mtOpen(); return await new Promise(res=>{ const t=db.transaction('kv','readonly').objectStore('kv').get(k); t.onsuccess=()=>res(t.result); t.onerror=()=>res(undefined); }); }catch(e){ return undefined; } }
+async function mtSet(k,v){ try{ const db=await mtOpen(); await new Promise(res=>{ const t=db.transaction('kv','readwrite').objectStore('kv').put(v,k); t.onsuccess=()=>res(); t.onerror=()=>res(); }); }catch(e){} }
+async function mtDel(k){ try{ const db=await mtOpen(); await new Promise(res=>{ const t=db.transaction('kv','readwrite').objectStore('kv').delete(k); t.onsuccess=()=>res(); t.onerror=()=>res(); }); }catch(e){} }
 const importPub=(s)=>crypto.subtle.importKey('raw',b64ToAb(s),{name:'ECDH',namedCurve:'P-256'},false,[]);
 const importPriv=(s)=>crypto.subtle.importKey('pkcs8',b64ToAb(s),{name:'ECDH',namedCurve:'P-256'},false,['deriveKey']);
 const sharedKey=(priv,pub)=>crypto.subtle.deriveKey({name:'ECDH',public:pub},priv,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
@@ -1073,7 +1079,9 @@ async function buildGroupKeyMap(memberUids){
 }
 async function decryptFill(el,m,c){
   const bub=el&&el.querySelector('.bubble'); if(!bub) return;
+  const ck=mtKey(c.conv,m.id);
   try{
+    if(!m.imgEnc){ const cached=await mtGet(ck); if(cached!=null){ m.text=cached; bub.innerHTML=linkify(esc(cached)); return; } }
     if(!c.aesKey) throw 0;
     if(m.imgEnc){
       const bytes=await decBytes(c.aesKey,m.iv,m.ct);
@@ -1083,7 +1091,7 @@ async function decryptFill(el,m,c){
       const im=bub.querySelector('.msgimg');
       if(im){ im.addEventListener('load',()=>im.classList.add('ld')); if(im.complete) im.classList.add('ld'); im.addEventListener('click',()=>openLightbox(url)); }
     } else {
-      const txt=await decMsg(c.aesKey,m.iv,m.ct); m.text=txt; bub.innerHTML=linkify(esc(txt));
+      const txt=await decMsg(c.aesKey,m.iv,m.ct); m.text=txt; bub.innerHTML=linkify(esc(txt)); mtSet(ck,txt);
     }
   }catch(e){
     // self-heal: the peer may have rotated keys -> refresh once and retry
@@ -1100,7 +1108,7 @@ async function decryptFill(el,m,c){
             bub.innerHTML=`<img class="msgimg" src="${url}" alt="写真">`;
             const im=bub.querySelector('.msgimg'); if(im){ im.addEventListener('load',()=>im.classList.add('ld')); if(im.complete) im.classList.add('ld'); im.addEventListener('click',()=>openLightbox(url)); }
           } else {
-            const txt=await decMsg(c.aesKey,m.iv,m.ct); m.text=txt; bub.innerHTML=linkify(esc(txt));
+            const txt=await decMsg(c.aesKey,m.iv,m.ct); m.text=txt; bub.innerHTML=linkify(esc(txt)); mtSet(ck,txt);
           }
           return;
         }
@@ -1795,6 +1803,7 @@ function subscribeMessages(conv, c){
         } else if(ch.type==='removed'){
           const el=$(`.msg[data-id="${id}"]`,$('#thread'));
           c.msgs=c.msgs.filter(x=>x.id!==id);
+          mtDel(mtKey(conv,id));
           if(el) dissolveEl(el,()=>el.remove());
         }
       });
@@ -1845,7 +1854,7 @@ function onMsgArrived(conv,id,d,m,c){
   }
 }
 function scheduleTimedCloud(conv,id,expireAt){ const left=expireAt-now(); setTimeout(()=>deleteCloud(conv,id),Math.max(0,left)); }
-function deleteCloud(conv,id){ deleteDoc(doc(db,'chats',conv,'messages',id)).catch(()=>{}); }
+function deleteCloud(conv,id){ deleteDoc(doc(db,'chats',conv,'messages',id)).catch(()=>{}); mtDel(mtKey(conv,id)); }
 
 /* local thread render */
 function renderThread(){
@@ -2024,7 +2033,7 @@ async function doSend(){
       input.value=text; input.style.height='auto'; input.style.height=Math.min(120,input.scrollHeight)+'px'; sendBtn.disabled=!text.trim();
       return;
     }
-    try{ await pushMessage(c,payload,preview); if(!c.isGroup) notifyPeer(c.peer.uid,'msg'); }catch(e){ toast('送信に失敗しました'); }
+    try{ const mid=await pushMessage(c,payload,preview); if(mid && payload.enc) mtSet(mtKey(c.conv,mid), text); if(!c.isGroup) notifyPeer(c.peer.uid,'msg'); }catch(e){ toast('送信に失敗しました'); }
   } else {
     const m={id:'m'+now()+Math.random().toString(36).slice(2,6),from:'me',text,t:now(),ttl:currentTtl,readAt:null,expired:false};
     c.msgs.push(m); saveLocal();
@@ -2035,7 +2044,7 @@ async function doSend(){
 }
 async function pushMessage(c, payload, preview){
   const conv=c.conv;
-  await addDoc(msgsCol(conv),payload);            // onSnapshot will render it
+  const ref=await addDoc(msgsCol(conv),payload);            // onSnapshot will render it
   const upd={lastText:preview,lastTs:now()};
   if(c.isGroup){
     const gupd={...upd};
@@ -2046,6 +2055,7 @@ async function pushMessage(c, payload, preview){
     setDoc(doc(db,'users',uid,'contacts',peerUid),{ghostId:c.peer.id,...upd,unread:0},{merge:true}).catch(()=>{});
     setDoc(doc(db,'users',peerUid,'contacts',uid),{ghostId:me.id, nickname:me.nick||me.id, ...upd, unread:increment(1)},{merge:true}).catch(()=>{});
   }
+  return ref.id;
 }
 async function sendImage(file){
   if(!openCid) return;
