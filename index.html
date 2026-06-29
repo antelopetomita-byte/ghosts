@@ -745,7 +745,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24v';
+const BUILD='2026.06.24w';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -1016,9 +1016,22 @@ function backfillKeys(){
 }
 async function ensureChatKey(c){
   if(!c||c.isGroup) return null;
-  if(c.aesKey!==undefined) return c.aesKey;
+  if(c.aesKey) return c.aesKey;            // valid key cached
   c.aesKey=null;
-  try{ if(me.privKey && c.peer.pubKey){ const pk=await importPub(c.peer.pubKey); c.aesKey=await sharedKey(me.privKey,pk); } }catch(e){ c.aesKey=null; }
+  try{
+    // refresh the peer's CURRENT public key (handles peer reinstalling / rotating keys)
+    if(MODE==='cloud' && c.peer && c.peer.uid){
+      try{
+        const us=await getDoc(doc(db,'users',c.peer.uid));
+        const pk=us.exists() && us.data().pubKey;
+        if(pk && pk!==c.peer.pubKey){
+          c.peer.pubKey=pk;
+          setDoc(doc(db,'users',uid,'contacts',c.peer.uid),{pubKey:pk},{merge:true}).catch(()=>{});
+        }
+      }catch(e){}
+    }
+    if(me.privKey && c.peer.pubKey){ const pk=await importPub(c.peer.pubKey); c.aesKey=await sharedKey(me.privKey,pk); }
+  }catch(e){ c.aesKey=null; }
   return c.aesKey;
 }
 /* ---- group E2EE: one AES key per group, wrapped per member via ECDH ---- */
@@ -1072,7 +1085,29 @@ async function decryptFill(el,m,c){
     } else {
       const txt=await decMsg(c.aesKey,m.iv,m.ct); m.text=txt; bub.innerHTML=linkify(esc(txt));
     }
-  }catch(e){ bub.innerHTML='<span class="encfail">🔒 復号できません</span>'; }
+  }catch(e){
+    // self-heal: the peer may have rotated keys -> refresh once and retry
+    if(c && !c.isGroup && el && !el._decRetried){
+      el._decRetried=true;
+      try{
+        c.aesKey=undefined;
+        await ensureChatKey(c);
+        if(c.aesKey){
+          if(m.imgEnc){
+            const bytes=await decBytes(c.aesKey,m.iv,m.ct);
+            const url='data:image/jpeg;base64,'+abToB64(bytes); m.img=url;
+            bub.classList.remove('enc'); bub.classList.add('img');
+            bub.innerHTML=`<img class="msgimg" src="${url}" alt="写真">`;
+            const im=bub.querySelector('.msgimg'); if(im){ im.addEventListener('load',()=>im.classList.add('ld')); if(im.complete) im.classList.add('ld'); im.addEventListener('click',()=>openLightbox(url)); }
+          } else {
+            const txt=await decMsg(c.aesKey,m.iv,m.ct); m.text=txt; bub.innerHTML=linkify(esc(txt));
+          }
+          return;
+        }
+      }catch(_){}
+    }
+    bub.innerHTML='<span class="encfail">🔒 復号できません</span>';
+  }
 }
 function fileToAvatar(file){
   return new Promise((res,rej)=>{
