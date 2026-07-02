@@ -745,7 +745,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24x';
+const BUILD='2026.06.24y';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -1020,6 +1020,16 @@ function backfillKeys(){
     localStorage.setItem('gh_keys_bf_v1','1');
   }catch(e){} },2600);
 }
+function keyChangeNote(c){
+  if(!c || !c.keyChanged) return;
+  c.keyChanged=false;
+  if(openCid===undefined || state.chats[openCid]!==c) { toast('🔑 相手の暗号鍵が更新されました'); return; }
+  const note=document.createElement('div'); note.className='daysep';
+  note.style.cssText='color:#ffcf5c;border:1px solid rgba(255,207,92,.35);border-radius:12px;padding:8px 12px;margin:10px auto;max-width:88%;font-size:12px;line-height:1.5;height:auto';
+  note.textContent='🔑 相手の暗号鍵が変わりました（端末変更や再登録の可能性）。新しい鍵で暗号化を続けます。心当たりがない場合は、通話のSAS絵文字などで相手ご本人か確認してください。';
+  const th=$('#thread'); if(th){ th.appendChild(note); th.scrollTop=th.scrollHeight; }
+  toast('🔑 相手の暗号鍵が更新されました');
+}
 async function ensureChatKey(c){
   if(!c||c.isGroup) return null;
   if(c.aesKey) return c.aesKey;            // valid key cached
@@ -1031,7 +1041,9 @@ async function ensureChatKey(c){
         const us=await getDoc(doc(db,'users',c.peer.uid));
         const pk=us.exists() && us.data().pubKey;
         if(pk && pk!==c.peer.pubKey){
+          const hadOld=!!c.peer.pubKey;      // first-time fill isn't a "change"
           c.peer.pubKey=pk;
+          if(hadOld) c.keyChanged=true;
           setDoc(doc(db,'users',uid,'contacts',c.peer.uid),{pubKey:pk},{merge:true}).catch(()=>{});
         }
       }catch(e){}
@@ -1100,6 +1112,7 @@ async function decryptFill(el,m,c){
       try{
         c.aesKey=undefined;
         await ensureChatKey(c);
+        keyChangeNote(c);
         if(c.aesKey){
           if(m.imgEnc){
             const bytes=await decBytes(c.aesKey,m.iv,m.ct);
@@ -1759,6 +1772,7 @@ async function openChat(cid){
     if(!c.isGroup) await ensureChatKey(c); else await ensureGroupKey(c);
     if(c.aesKey) $('#peerStatus').textContent = c.isGroup ? '🔒 暗号化グループ' : '🔒 暗号化された会話';
     else $('#peerStatus').textContent = c.isGroup ? '⚠️ 暗号化できません（作り直してください）' : '⚠️ 暗号化できません（送信不可）';
+    keyChangeNote(c);
     subscribeMessages(c.conv, c); subscribeTyping(c);
   }
   else { renderThread(); markLocalRead(cid); }
@@ -2020,7 +2034,7 @@ async function doSend(){
   { const ep=$('#emojiPanel'); if(ep) ep.classList.remove('open'); }
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
-    if(!c.aesKey){ if(c.isGroup) await ensureGroupKey(c); else await ensureChatKey(c); }
+    if(!c.aesKey){ if(c.isGroup) await ensureGroupKey(c); else await ensureChatKey(c); keyChangeNote(c); }
     let payload, preview;
     if(c.aesKey){
       const e=await encMsg(c.aesKey,text);
@@ -2063,7 +2077,7 @@ async function sendImage(file){
   let data; try{ data=await compressImage(file); }catch(e){ toast('画像を読み込めませんでした'); return; }
   const ms=ttlMs(currentTtl);
   if(MODE==='cloud' && c.peer.uid){
-    if(!c.aesKey){ if(c.isGroup) await ensureGroupKey(c); else await ensureChatKey(c); }
+    if(!c.aesKey){ if(c.isGroup) await ensureGroupKey(c); else await ensureChatKey(c); keyChangeNote(c); }
     let payload, preview;
     if(c.aesKey){
       const raw=b64ToAb(data.url.split(',')[1]);
