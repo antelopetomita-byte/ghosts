@@ -167,6 +167,8 @@
   .idedit .pfx{font:700 15px "Space Mono";color:var(--spectral)}
   .idinput{flex:1;background:transparent;border:none;outline:none;color:var(--ghost);font:700 15px "Space Mono";padding:15px 2px;min-width:0;letter-spacing:.02em}
   .set-row{display:flex;align-items:center;gap:12px;padding:16px 2px;border-bottom:1px solid var(--line)}
+  .notif-toggle{min-width:66px;font-weight:600;transition:.18s}
+  .notif-toggle.on{background:var(--spectral);color:#04130d;border-color:var(--spectral)}
   .set-row .k{font:400 11px "Space Mono";color:var(--fade);text-transform:uppercase;letter-spacing:.1em;flex:none;width:88px}
   .set-row .v{flex:1;font:600 15px "Inter";color:var(--ghost);word-break:break-all}
   .av.grp{background:linear-gradient(150deg,#2fe7a8,#1f9d74)}
@@ -480,8 +482,8 @@
       <p class="sub" style="margin-top:22px">同じIDを別の端末で使うには、起動画面で「ログイン」を選び、このGhost IDとパスワードでサインインしてください。新しいIDは作られません。</p>
       <label class="flabel" style="margin-top:18px">通知</label>
       <div class="set-row">
-        <div class="v" style="flex:1">アイコンに未読バッジを表示</div>
-        <button class="btn btn-ghost mini" id="notifBtn" type="button" style="width:auto">有効にする</button>
+        <div class="v" style="flex:1">通知（バナー＋未読バッジ）</div>
+        <button class="btn btn-ghost mini notif-toggle" id="notifBtn" type="button" style="width:auto">オフ</button>
       </div>
       <p class="hint" id="notifHint">ホーム画面に追加したアプリで、未読数をアイコンに表示します（iOS 16.4+）。</p>
       <button class="btn btn-ghost" id="logoutBtn" type="button" style="margin-top:20px;color:var(--danger);border-color:rgba(255,107,107,.3)">ログアウト</button>
@@ -746,7 +748,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24aa';
+const BUILD='2026.06.24ab';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -765,23 +767,38 @@ function updateBadge(){
   // keep the service worker's counter in sync with the real unread total
   try{ if(navigator.serviceWorker&&navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({type:'syncCount', n}); }catch(e){}
 }
-async function enableNotif(){
+function notifIsOn(){
+  if(typeof Notification==='undefined') return false;
+  if(Notification.permission!=='granted') return false;
+  return localStorage.getItem('gh_notif_off')!=='1';
+}
+async function toggleNotif(){
   if(typeof Notification==='undefined'){ toast('この環境では通知に対応していません'); return; }
-  try{
-    const p=await Notification.requestPermission();
-    if(p==='granted'){ toast('通知を有効にしました'); updateBadge(); registerPush(); }
-    else if(p==='denied'){ toast('通知がブロックされています（設定から許可してください）'); }
+  if(notifIsOn()){
+    // turn OFF: stop receiving push on this device
+    localStorage.setItem('gh_notif_off','1');
+    try{ const reg=await navigator.serviceWorker.getRegistration(); const sub=reg&&await reg.pushManager.getSubscription(); if(sub) await sub.unsubscribe(); }catch(e){}
+    try{ if(MODE==='cloud') await deleteDoc(doc(db,'pushSubs',uid)); }catch(e){}
+    try{ if('clearAppBadge' in navigator && navigator.clearAppBadge) navigator.clearAppBadge(); }catch(e){}
+    toast('通知をオフにしました');
+  } else {
+    // turn ON
+    localStorage.removeItem('gh_notif_off');
+    let p=Notification.permission;
+    if(p!=='granted') p=await Notification.requestPermission();
+    if(p==='granted'){ await registerPush(); updateBadge(); toast('通知をオンにしました'); }
+    else if(p==='denied'){ toast('通知がブロックされています（iOSの設定→通知→Ghostsから許可）'); }
     else { toast('通知は有効になりませんでした'); }
-  }catch(e){ toast('通知を有効にできませんでした'); }
+  }
   updateNotifBtn();
 }
 function updateNotifBtn(){
   const b=$('#notifBtn'), h=$('#notifHint'); if(!b) return;
-  if(!('setAppBadge' in navigator)){ b.textContent='非対応'; b.disabled=true; if(h) h.textContent='この環境ではアイコンバッジに対応していません。iOSはホーム画面に追加したアプリで利用できます。'; return; }
-  const perm = (typeof Notification!=='undefined') ? Notification.permission : 'default';
-  if(perm==='granted'){ b.textContent='有効'; b.disabled=true; if(h) h.textContent='通知が届くたびにアイコンに未読数を表示します（閉じていてもOK）。'; }
-  else if(perm==='denied'){ b.textContent='ブロック中'; b.disabled=true; if(h) h.textContent='通知がブロックされています。iOSの設定 → 通知 から許可してください。'; }
-  else { b.textContent='有効にする'; b.disabled=false; if(h) h.textContent='ホーム画面に追加したアプリで、未読数をアイコンに表示します（iOS 16.4+）。'; }
+  if(typeof Notification==='undefined' || !('serviceWorker' in navigator)){ b.textContent='非対応'; b.disabled=true; b.classList.remove('on'); if(h) h.textContent='この環境では通知に対応していません。iOSはホーム画面に追加したアプリでご利用ください。'; return; }
+  if(Notification.permission==='denied'){ b.textContent='ブロック中'; b.disabled=true; b.classList.remove('on'); if(h) h.textContent='通知がブロックされています。iOSの設定 → 通知 → Ghosts から許可してください。'; return; }
+  b.disabled=false;
+  if(notifIsOn()){ b.textContent='オン'; b.classList.add('on'); if(h) h.textContent='通知（バナー＋アイコンの未読数）を受け取ります。アプリを閉じていてもOK。タップでオフ。'; }
+  else { b.textContent='オフ'; b.classList.remove('on'); if(h) h.textContent='通知はオフです。タップするとオンにできます。'; }
 }
 /* ---- Web Push (closed-state notifications) ---- */
 const VAPID_PUBLIC='BFQeXKQ8YEAyejYtN_zgGwm6xSLLeEAvK8XkBQ3E88yCll-5laUEhR-exB7T9zl5w4icxHNi6w5YFZP_zGgiP1I';
@@ -1320,7 +1337,7 @@ async function enterApp(){
   startReaper();
   if(MODE==='cloud'){ await ensureKeys(); subscribeContacts(); subscribeGroups(); backfillKeys(); watchConnections();
     // keep the push subscription fresh (subscriptions can expire; without this, notifications silently stop)
-    try{ if(typeof Notification!=='undefined' && Notification.permission==='granted') registerPush(); }catch(e){}
+    try{ if(typeof Notification!=='undefined' && Notification.permission==='granted' && localStorage.getItem('gh_notif_off')!=='1') registerPush(); }catch(e){}
   } else renderList();
 }
 
@@ -1511,7 +1528,7 @@ if(avFile) avFile.addEventListener('change', async ()=>{
   catch(e){ toast('画像を読み込めませんでした'); }
 });
 const setAvRemoveBtn=$('#setAvRemove'); if(setAvRemoveBtn) setAvRemoveBtn.addEventListener('click',()=>setAvatar(''));
-const notifBtn=$('#notifBtn'); if(notifBtn) notifBtn.addEventListener('click',enableNotif);
+const notifBtn=$('#notifBtn'); if(notifBtn) notifBtn.addEventListener('click',toggleNotif);
 const callBtn=$('#callBtn'); if(callBtn) callBtn.addEventListener('click',()=>{ const c=state.chats[openCid]; if(c) startCall(c); });
 const callAccept=$('#callAccept'); if(callAccept) callAccept.addEventListener('click',acceptCall);
 const callDecline=$('#callDecline'); if(callDecline) callDecline.addEventListener('click',declineCall);
