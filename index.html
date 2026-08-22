@@ -746,7 +746,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24z';
+const BUILD='2026.06.24aa';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -797,7 +797,24 @@ async function registerPush(){
     return true;
   }catch(e){ return false; }
 }
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible'){ try{ updateBadge(); }catch(e){} } });
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible'){ try{ updateBadge(); }catch(e){} try{ checkForUpdate(); }catch(e){} } });
+/* auto-update: fetch the latest build tag (cache-bypassed); if newer, silently reload to it. No more manual reinstalls. */
+let _updChecked=0;
+async function checkForUpdate(){
+  const nowt=Date.now(); if(nowt-_updChecked<15000) return; _updChecked=nowt;   // throttle
+  try{
+    const res=await fetch('version.txt?t='+nowt,{cache:'no-store'});
+    if(res && res.ok){
+      const server=(await res.text()).trim();
+      if(server && server!==BUILD){
+        const want='?v='+encodeURIComponent(server);
+        if(location.search!==want){ location.replace(location.pathname+want); return; }
+      }
+    }
+  }catch(e){}
+  try{ const reg=await navigator.serviceWorker.getRegistration(); if(reg) reg.update(); }catch(e){}
+}
+try{ checkForUpdate(); }catch(e){}
 async function notifyPeer(peerUid, kind){
   if(!NOTIFY_URL || MODE!=='cloud' || !peerUid) return;
   try{
