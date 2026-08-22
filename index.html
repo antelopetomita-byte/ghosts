@@ -485,6 +485,10 @@
         <div class="v" style="flex:1">通知（バナー＋未読バッジ）</div>
         <button class="btn btn-ghost mini notif-toggle" id="notifBtn" type="button" style="width:auto">オフ</button>
       </div>
+      <div class="set-row" style="border-bottom:none;padding-top:6px">
+        <div class="v" style="flex:1;font-size:13px;color:var(--fade)">通知が来るかこの端末で確認</div>
+        <button class="btn btn-ghost mini" id="notifTestBtn" type="button" style="width:auto">通知テスト</button>
+      </div>
       <p class="hint" id="notifHint">ホーム画面に追加したアプリで、未読数をアイコンに表示します（iOS 16.4+）。</p>
       <button class="btn btn-ghost" id="logoutBtn" type="button" style="margin-top:20px;color:var(--danger);border-color:rgba(255,107,107,.3)">ログアウト</button>
       <div class="build-label">GHOSTS · build <span id="buildVer">—</span></div>
@@ -748,7 +752,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24ab';
+const BUILD='2026.06.24ac';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -766,6 +770,22 @@ function updateBadge(){
   try{ if('setAppBadge' in navigator){ if(n>0) navigator.setAppBadge(n); else navigator.clearAppBadge&&navigator.clearAppBadge(); } }catch(e){}
   // keep the service worker's counter in sync with the real unread total
   try{ if(navigator.serviceWorker&&navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({type:'syncCount', n}); }catch(e){}
+}
+async function testNotif(){
+  // local diagnostic: does THIS device display a notification at all? (bypasses the server)
+  try{
+    if(typeof Notification==='undefined'){ toast('この環境は通知非対応'); return; }
+    if(Notification.permission!=='granted'){ toast('通知が許可されていません（オンにしてください）'); return; }
+    const reg=await navigator.serviceWorker.getRegistration();
+    if(!reg){ toast('SW未登録。アプリを開き直してください'); return; }
+    // check subscription + firestore registration
+    let subState='なし';
+    try{ const s=await reg.pushManager.getSubscription(); subState=s?'あり':'なし'; }catch(e){}
+    let docState='不明';
+    try{ if(MODE==='cloud'){ const d=await getDoc(doc(db,'pushSubs',uid)); docState=d.exists()?'登録済':'未登録'; } }catch(e){}
+    await reg.showNotification('Ghosts テスト',{body:'この通知が見えれば表示はOK（購読:'+subState+' / サーバー登録:'+docState+'）',icon:'icon-192.png',tag:'ghosts-test'});
+    toast('テスト通知を出しました（購読:'+subState+'/登録:'+docState+'）');
+  }catch(e){ toast('テスト失敗: '+((e&&e.message)||e)); }
 }
 function notifIsOn(){
   if(typeof Notification==='undefined') return false;
@@ -839,11 +859,13 @@ async function notifyPeer(peerUid, kind){
     const idToken=await u.getIdToken();
     const r=await fetch(NOTIFY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken, toUid:peerUid, kind:kind||'msg'})});
     let j={}; try{ j=await r.json(); }catch(_){}
-    // quietly diagnose: only warn on definite problems so we can see why a push didn't arrive
+    // diagnose: surface why a push didn't arrive (temporary, helps debugging)
     if(j && j.ok===false){
-      if(j.reason==='no subscription') { /* recipient hasn't enabled notifications */ }
-      else if(r.status===403) toast('通知: 相手と接続が確認できません（つなぎ直しが必要かも）');
-    }
+      if(j.reason==='no subscription') toast('通知不達: 相手が通知オフ/未登録');
+      else if(j.reason==='send failed') toast('通知不達: 送信失敗（iOS制限/失効の可能性）');
+      else toast('通知不達: '+(j.reason||'不明'));
+    } else if(r.status===403) toast('通知不達: 相手と未接続（つなぎ直しが必要）');
+    else if(r.status===401) toast('通知不達: 認証エラー');
   }catch(e){}
 }
 
@@ -1529,6 +1551,7 @@ if(avFile) avFile.addEventListener('change', async ()=>{
 });
 const setAvRemoveBtn=$('#setAvRemove'); if(setAvRemoveBtn) setAvRemoveBtn.addEventListener('click',()=>setAvatar(''));
 const notifBtn=$('#notifBtn'); if(notifBtn) notifBtn.addEventListener('click',toggleNotif);
+const notifTestBtn=$('#notifTestBtn'); if(notifTestBtn) notifTestBtn.addEventListener('click',testNotif);
 const callBtn=$('#callBtn'); if(callBtn) callBtn.addEventListener('click',()=>{ const c=state.chats[openCid]; if(c) startCall(c); });
 const callAccept=$('#callAccept'); if(callAccept) callAccept.addEventListener('click',acceptCall);
 const callDecline=$('#callDecline'); if(callDecline) callDecline.addEventListener('click',declineCall);
