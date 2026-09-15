@@ -859,14 +859,18 @@ async function notifyPeer(peerUid, kind){
     const idToken=await u.getIdToken();
     const r=await fetch(NOTIFY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken, toUid:peerUid, kind:kind||'msg'})});
     let j={}; try{ j=await r.json(); }catch(_){}
-    // diagnose: surface why a push didn't arrive (temporary, helps debugging)
-    if(j && j.ok===false){
+    // TEMP diagnostic: always surface the outcome of a push attempt
+    if(j && j.ok===true){ toast('通知: サーバー受理OK（相手へ配信要求）'); }
+    else if(j && j.ok===false){
       if(j.reason==='no subscription') toast('通知不達: 相手が通知オフ/未登録');
-      else if(j.reason==='send failed') toast('通知不達: 送信失敗（iOS制限/失効の可能性）');
+      else if(j.reason==='send failed') toast('通知不達: 送信失敗 code='+(j.code||'?'));
       else toast('通知不達: '+(j.reason||'不明'));
-    } else if(r.status===403) toast('通知不達: 相手と未接続（つなぎ直しが必要）');
+    }
+    else if(r.status===403) toast('通知不達: 相手と未接続（つなぎ直しが必要）');
     else if(r.status===401) toast('通知不達: 認証エラー');
-  }catch(e){}
+    else if(r.status===400) toast('通知不達: '+((j&&j.error)||'400'));
+    else toast('通知: 応答 '+r.status);
+  }catch(e){ toast('通知: 例外 '+((e&&e.message)||e)); }
 }
 
 /* ====================== 1:1 VOICE CALL (WebRTC) ====================== */
