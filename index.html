@@ -752,7 +752,7 @@ function genId(){ const c='abcdefghijkmnpqrstuvwxyz23456789'; let s=''; for(let 
 function initial(n){ return (n||'G').replace('ghost_','').charAt(0).toUpperCase(); }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function avInner(name, avatar){ return avatar ? `<img class="avimg" src="${avatar}" alt="">` : esc(initial(name)); }
-const BUILD='2026.06.24af';
+const BUILD='2026.06.24ag';
 function linkify(escaped){ return (escaped||'').replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="msglink">$1</a>'); }
 function fmtDay(t){
   if(!t) return '';
@@ -858,10 +858,17 @@ async function notifyPeer(peerUid, kind){
     const u=auth.currentUser; if(!u) return;
     const idToken=await u.getIdToken();
     const r=await fetch(NOTIFY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken, toUid:peerUid, kind:kind||'msg'})});
-    let raw=''; try{ raw=await r.text(); }catch(_){}
-    // TEMP diagnostic: unmissable dialog with the raw server result (tap OK to dismiss)
-    try{ alert('通知診断\nstatus='+r.status+'\n'+(raw||'(本文なし)')); }catch(_){}
-  }catch(e){ try{ alert('通知診断: 例外 '+((e&&e.message)||e)); }catch(_){} }
+    let j={}; try{ j=await r.json(); }catch(_){}
+    // quiet: only surface a toast when a push actually fails
+    if(j && j.ok===false){
+      if(j.reason==='no subscription') toast('通知不達: 相手が通知オフ/未登録');
+      else if(j.reason==='send failed') toast('通知不達: 送信失敗（購読失効の可能性）');
+      else toast('通知不達: '+(j.reason||'不明'));
+    }
+    else if(r.status===403) toast('通知不達: 相手と未接続');
+    else if(r.status===401) toast('通知不達: 認証エラー');
+    else if(!r.ok) toast('通知不達: 応答 '+r.status);
+  }catch(e){}
 }
 
 /* ====================== 1:1 VOICE CALL (WebRTC) ====================== */
